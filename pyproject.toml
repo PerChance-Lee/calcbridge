@@ -1,0 +1,39 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "calcbridge"
+version = "1.0.0"
+description = "Open-source desktop link for the TI-Nspire CX II: files, screenshots, backups, OS install and document tools"
+readme = "README.md"
+license = "GPL-3.0-or-later"
+requires-python = ">=3.10"
+authors = [{ name = "CalcBridge contributors" }]
+dependencies = [
+    "PySide6-Essentials>=6.8",
+    "pyusb>=1.2",
+    "libusb-package>=1.0.26",
+    "pycryptodome>=3.20",
+]
+
+[project.optional-dependencies]
+dev = ["pytest", "pytest-qt", "pytest-timeout"]
+
+[project.scripts]
+calcbridge-cli = "calcbridge.cli:main"
+
+[project.gui-scripts]
+calcbridge = "calcbridge.gui.app:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+calcbridge = ["assets/*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+qt_api = "pyside6"
+timeout = 120
+markers = ["hardware: needs a real TI-Nspire CX II plugged in (run with --hardware)"]

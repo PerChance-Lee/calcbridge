@@ -7,7 +7,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 from PySide6.QtCore import QObject, QTimer, Signal, Slot
 
-from ..device import Calculator
+from ..device import Calculator, Cancelled
 from ..protocol.errors import NoDeviceError
 from ..protocol.transport import list_usb_devices
 
@@ -94,6 +94,9 @@ class DeviceManager(QObject):
                 if needs_device:
                     if calc is None:
                         raise NoDeviceError("No calculator is connected")
+                    if calc is not self.calc:  # queued before a disconnect: don't touch the old link
+                        raise Cancelled("Disconnected before this ran")
+                    calc.cancel_event.clear()  # a Cancel meant for an earlier job doesn't carry over
 
                     def progress(done, total, text=label):
                         job._progress.emit(int(done), int(total), text)
@@ -115,6 +118,9 @@ class DeviceManager(QObject):
             self.busy_changed.emit(False)
 
     def _on_failed(self, msg, exc, on_error):
+        if isinstance(exc, Cancelled):
+            self.message.emit(msg)  # the user asked for it; no error dialog
+            return
         if isinstance(exc, NoDeviceError) and self.calc is not None:
             self._drop(f"Calculator disconnected: {msg}")
         if on_error:
@@ -206,7 +212,10 @@ class DeviceManager(QObject):
         self._drop("Disconnected")
 
     def mark_lost(self, reason):
-        self._present = False
+        """The handheld is restarting (e.g. after an OS install): reconnect only once it has dropped
+        off USB and come back, not while it's still enumerated but busy."""
+        self._present = True
+        self.auto_connect = False
         self._drop(reason)
 
     def _drop(self, reason):
@@ -217,8 +226,15 @@ class DeviceManager(QObject):
         self.disconnected.emit(reason)
 
     def shutdown(self):
+        """Stop queued jobs, ask the running one to stop at its next item, then close the link (which
+        also saves the sequence number for next time)."""
         self._poll.stop()
-        if self.calc is not None:
-            calc, self.calc = self.calc, None
-            self._pool.submit(calc.close)
+        calc, self.calc = self.calc, None
+        if calc is not None:
+            calc.cancel_event.set()
         self._pool.shutdown(wait=True, cancel_futures=True)
+        if calc is not None:
+            try:
+                calc.close()
+            except Exception as e:
+                log.debug("close failed: %s", e)

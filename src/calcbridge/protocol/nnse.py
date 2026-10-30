@@ -164,16 +164,22 @@ class Link:
         if m["dest"] not in (ADDR_ME, ADDR_ALL) or m["service"] & ACK_FLAG:
             return
         if m["req_ack"] & 1:
-            self._write(m["service"] | ACK_FLAG, req_ack=m["req_ack"] & ~1, seqno=m["seqno"],
-                        src=m["dest"], dest=m["src"], misc=m["misc"], unknown=m["unknown"])
+            try:
+                self._write(m["service"] | ACK_FLAG, req_ack=m["req_ack"] & ~1, seqno=m["seqno"],
+                            src=m["dest"], dest=m["src"], misc=m["misc"], unknown=m["unknown"])
+            except LinkError:
+                pass  # a lost ack just makes the calc send that packet again; we de-duplicate it
         svc, data = m["service"] & ~ACK_FLAG, m["data"]
         if svc == SVC_ADDRREQ and data[:1] == b"\x00":
-            # A fresh link: the calc's sequence expectations start over. It sometimes drops the first
-            # reply after reconnecting, so answer twice like libnspire does.
+            # A fresh link: the calc's sequence expectations start over, and nothing is usable until
+            # its time request completes the handshake. It sometimes drops the first reply after
+            # reconnecting, so answer twice like libnspire does.
             if self.ready:
                 self.reset_seen = True
+            self.ready = False
             self.seqno = 0
             self._last_rx_seq = None
+            self._inbox.clear()  # anything queued belongs to the old link
             self._write(SVC_ADDRREQ, b"\x80", seqno=self._next())
             self._write(SVC_ADDRREQ, b"\x80", seqno=self._next())
         elif svc == SVC_TIME and data[:1] == b"\x00":
@@ -200,34 +206,46 @@ class Link:
     # ---------------------------------------------------------------- open
     def open(self, first_payload: bytes, progress=None) -> None:
         """Bring the link up and deliver the first stream payload (NavNet's address assignment)."""
+        self._inbox.clear()
+        self.reset_seen = False
+        self.ready = False
         # A freshly plugged-in calc repeats address requests; an established link stays silent.
+        # (After a mid-session reset the address request was already answered; the time request that
+        # completes the handshake follows shortly.)
         deadline = time.monotonic() + 1.2
         while time.monotonic() < deadline and not self.ready:
             m = self._read(300)
             if m is None:
                 continue
-            if m["service"] == SVC_ADDRREQ:
+            if m["service"] in (SVC_ADDRREQ, SVC_UNKNOWN):
                 deadline = max(deadline, time.monotonic() + 3)  # handshake under way: wait for its end
             self._handle(m)
-        if self.ready:  # we just did the handshake: sequence numbers start from what it set up
+        if self.ready:  # we just did the handshake: sequence numbers continue from it
+            self.reset_seen = False
             self.send(first_payload)
             return
-        saved = self.store.load(self.t.device_key)
-        self.seqno = max(0, (saved or 0) - 4)
-        log.info("link silent; probing for the sequence number from %d", self.seqno)
-        for attempt in range(self.PROBE_LIMIT):
+        saved = self.store.load(self.t.device_key) or 0
+        start = max(0, saved - 4)
+        # Most likely just behind the saved number; then everything below it; then further above.
+        order = [*range(start, start + 64), *range(0, start), *range(start + 64, start + self.PROBE_LIMIT)]
+        log.info("link silent; probing for the sequence number near %d", start)
+        for attempt, seq in enumerate(order):
             if progress and attempt and attempt % 16 == 0:
-                progress(attempt, self.PROBE_LIMIT)
-            seq = self._next()
+                progress(attempt, len(order))
             # the first packet after an idle period may be dropped, so the first candidate gets a retry
             for flag in ((REQ_ACK, REQ_ACK_RETRY) if attempt == 0 else (REQ_ACK,)):
-                self._write(SVC_STREAM, first_payload, req_ack=flag, seqno=seq)
-                if self._wait_ack(seq, self.PROBE_TIMEOUT_MS if attempt else self.ACK_TIMEOUT_MS):
+                try:
+                    self._write(SVC_STREAM, first_payload, req_ack=flag, seqno=seq & 0xFFFF)
+                except LinkError:
+                    continue
+                if self._wait_ack(seq & 0xFFFF, self.PROBE_TIMEOUT_MS if attempt else self.ACK_TIMEOUT_MS):
+                    self.seqno = (seq + 1) & 0xFFFF
                     self.ready = True
                     self.reset_seen = False
                     self._save(force=True)
                     return
-                if self.ready and self.seqno < seq:  # a handshake happened while probing
+                if self.ready:  # the calc was re-plugged while we probed and just did a handshake
+                    self.reset_seen = False
                     self.send(first_payload)
                     return
         raise LinkError("The calculator isn't answering. Unplug it, plug it back in, and try again.")
@@ -251,12 +269,22 @@ class Link:
             raise ValueError("payload too large for one NNSE message")
         self._check_reset()
         seq = self._next()
-        for attempt in range(self.RETRIES):
-            self._write(SVC_STREAM, payload, req_ack=REQ_ACK if attempt == 0 else REQ_ACK_RETRY, seqno=seq)
-            if self._wait_ack(seq, self.ACK_TIMEOUT_MS):
-                self._save()
-                return
-            self._check_reset()
+        try:
+            for attempt in range(self.RETRIES):
+                try:
+                    self._write(SVC_STREAM, payload, req_ack=REQ_ACK if attempt == 0 else REQ_ACK_RETRY,
+                                seqno=seq)
+                except LinkError:  # e.g. a USB write timeout: same as a lost packet, try again
+                    continue
+                if self._wait_ack(seq, self.ACK_TIMEOUT_MS):
+                    self._save()
+                    return
+                self._check_reset()
+        except LinkResetError:
+            raise  # the seqno was reset by the new handshake; don't overwrite it
+        except BaseException:
+            self.seqno = seq
+            raise
         self.seqno = seq  # never acked, so the calc still expects this number
         self._save(force=True)
         raise LinkError("The calculator stopped answering")

@@ -2,6 +2,8 @@
 from __future__ import annotations
 
 from PySide6.QtCore import Qt, QTimer, Signal
+
+from ..protocol.keys import KEYS
 from PySide6.QtGui import QKeyEvent, QPixmap
 from PySide6.QtWidgets import (QGridLayout, QGroupBox, QHBoxLayout, QLabel, QLineEdit, QPushButton, QSizePolicy,
                                QVBoxLayout, QWidget)
@@ -99,7 +101,7 @@ class KeypadTab(QWidget):
             self.key_requested.emit(PC_KEYS[e.key()])
             return
         t = e.text()
-        if t and (t.isalnum() or t in "+-*/^=()., ?:"):
+        if t and t in KEYS:  # only characters the handheld has a key for
             self.key_requested.emit(t)
             return
         super().keyPressEvent(e)

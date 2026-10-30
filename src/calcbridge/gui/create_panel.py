@@ -10,6 +10,7 @@ from PySide6.QtWidgets import (QCheckBox, QComboBox, QFileDialog, QFormLayout, Q
                                QHBoxLayout, QLabel, QLineEdit, QMessageBox, QPlainTextEdit, QPushButton,
                                QScrollArea, QSplitter, QVBoxLayout, QWidget)
 
+from ..textio import read_text
 from ..tns import build_lua, build_notes, build_python, build_text
 from ..tns.notes import MathSyntaxError
 from .mathview import NotesView
@@ -42,7 +43,8 @@ INSERTS = [("a/b", r"\frac{}{}"), ("√", r"\sqrt{}"), ("xⁿ", "^{}"), ("xₖ",
 
 
 def safe_identifier(name: str) -> str:
-    s = re.sub(r"\W", "_", name.strip().lower()) or "program"
+    """A Python module name the handheld accepts (ASCII identifier)."""
+    s = re.sub(r"\W", "_", name.strip().lower(), flags=re.ASCII).strip("_") or "program"
     return ("p_" + s) if s[0].isdigit() else s
 
 
@@ -217,6 +219,8 @@ class CreateTab(QWidget):
             self.status.emit(f"Saved {path}")
 
     def _send(self, as_module):
+        if as_module and not self.script.text().strip():
+            self.script.setText(safe_identifier(self.name.text()) + ".py")
         built = self._build_or_warn()
         if built:
             data, fname = built
@@ -236,8 +240,7 @@ class CreateTab(QWidget):
         ext = os.path.splitext(path)[1].lower()
         kind = {".py": 1, ".lua": 2}.get(ext, 3)
         if code is None:
-            with open(path, encoding="utf-8", errors="replace") as f:
-                code = f.read()
+            code = read_text(path)
         self.kind.setCurrentIndex(kind)
         self.name.setText(os.path.splitext(os.path.basename(path))[0])
         self.editor.setPlainText(code)

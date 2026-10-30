@@ -9,6 +9,7 @@ from PySide6.QtWidgets import (QFileDialog, QHBoxLayout, QLabel, QListWidget, QL
                                QPlainTextEdit, QPushButton, QScrollArea, QSplitter, QStackedWidget, QVBoxLayout,
                                QWidget)
 
+from ..textio import safe_join
 from ..tns import TnsDocument
 from .mathview import NotesView, parse_r2d
 
@@ -128,7 +129,10 @@ class ViewerTab(QWidget):
         folder = QFileDialog.getExistingDirectory(self, "Save Python files to")
         if folder:
             for n, c in files.items():
-                with open(os.path.join(folder, n), "w", encoding="utf-8", newline="\n") as f:
+                path = safe_join(folder, n)  # names come from the document: never let them leave the folder
+                if path is None:
+                    continue
+                with open(path, "w", encoding="utf-8", newline="\n") as f:
                     f.write(c)
 
     def _edit(self):

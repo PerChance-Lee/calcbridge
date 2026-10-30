@@ -12,9 +12,11 @@ from PySide6.QtWidgets import (QDockWidget, QFileDialog, QFormLayout, QGroupBox,
                                QVBoxLayout, QWidget)
 
 from .. import APP_NAME, __version__
+from ..device import local_name
 from ..protocol import keys as keymod
 from ..protocol.errors import NoDeviceError
 from ..protocol.services import basename, dirname, join
+from ..textio import read_text
 from ..tns import build_lua, build_python, build_text
 from .create_panel import CreateTab, safe_identifier
 from .files_panel import (CONVERTIBLE, OS_EXTS, FilesTab, ask_overwrite, human_size, next_folder_name,
@@ -318,8 +320,7 @@ class MainWindow(QMainWindow):
                 if not convert_ok:
                     skipped.append(name)
                     continue
-                with open(path, encoding="utf-8", errors="replace") as f:
-                    src = f.read()
+                src = read_text(path)
                 stem = os.path.splitext(name)[0]
                 try:
                     data = (build_python(safe_identifier(stem) + ".py", src) if ext == ".py" else
@@ -355,19 +356,30 @@ class MainWindow(QMainWindow):
             if not plan:
                 return
 
+            skipped = []
+
             def run(c, progress):
                 for n, (path, name, data, overwrite) in enumerate(plan, 1):
+                    c._check_cancel()
                     progress(n - 1, len(plan), f"Sending {name} ({n} of {len(plan)})…")
                     if data is not None:
                         c.write_file(join(folder, name), data, overwrite=overwrite)
                     else:
-                        c.upload(path, folder, overwrite=overwrite, name=name)
-                    c._check_cancel()
+                        c.upload(path, folder, overwrite=overwrite, name=name, skipped=skipped)
                 progress(len(plan), len(plan), "Done")
                 return len(plan)
-            self.m.submit(run, on_done=lambda n: (self.say(f"Sent {n} item(s) to {folder}"), self.refresh()),
-                          on_error=lambda msg: (self.error(msg), self.refresh()), with_progress=True,
-                          label="Sending…")
+
+            def done(n):
+                self.say(f"Sent {n} item(s) to {folder}")
+                self.refresh()
+                if skipped:
+                    QMessageBox.information(self, "Some files were left out",
+                                            "The handheld only accepts TI-Nspire documents (.tns), so these "
+                                            "files inside the folders weren't sent:\n"
+                                            + "\n".join(os.path.basename(p) for p in skipped[:30])
+                                            + ("\n…" if len(skipped) > 30 else ""))
+            self.m.submit(run, on_done=done, on_error=lambda msg: (self.error(msg), self.refresh()),
+                          with_progress=True, label="Sending…")
         self.m.submit(lambda c: c.list_dir(folder), on_done=with_listing, on_error=self.error)
 
     def upload_dialog(self):
@@ -388,7 +400,7 @@ class MainWindow(QMainWindow):
             self.download_to(paths, self.files.local.current_dir)
 
     def download_to(self, remote_paths, local_folder):
-        targets = [(p, os.path.join(local_folder, basename(p))) for p in remote_paths]
+        targets = [(p, os.path.join(local_folder, local_name(basename(p)))) for p in remote_paths]
         clash = [t for _, t in targets if os.path.exists(t)]
         if clash and QMessageBox.question(self, "Replace files?", "These already exist on this computer and will be "
                                           "replaced:\n" + "\n".join(os.path.basename(c) for c in clash)) != QMessageBox.Yes:
@@ -397,9 +409,9 @@ class MainWindow(QMainWindow):
         def run(c, progress):
             total = 0
             for n, (p, t) in enumerate(targets, 1):
+                c._check_cancel()
                 progress(n - 1, len(targets), f"Receiving {basename(p)} ({n} of {len(targets)})…")
                 total += c.download(p, t)
-                c._check_cancel()
             progress(len(targets), len(targets), "Done")
             return total
         self.m.submit(run, on_done=lambda n: self.say(f"Received {human_size(n)} into {local_folder}"),
@@ -550,7 +562,9 @@ class MainWindow(QMainWindow):
 
     # ------------------------------------------------------ screen/keys
     def capture(self):
-        if self._capture_in_flight:
+        if self._capture_in_flight or self.m.calc is None:
+            if self.m.calc is None:
+                self.screen.live.setChecked(False)
             return
         self._capture_in_flight = True
 
@@ -584,8 +598,12 @@ class MainWindow(QMainWindow):
     def press_key(self, name):
         if self.m.calc is None:
             return
-        self._keys_in_flight += 1
-        code = keymod.key_code(name)
+        try:
+            code = keymod.key_code(name)
+        except KeyError:
+            self.say(f"The handheld has no key for {name!r}")
+            return
+        self._keys_in_flight += 1  # only once the key is known, so the counter always comes back to 0
 
         def done(_):
             self._keys_in_flight -= 1
@@ -598,6 +616,8 @@ class MainWindow(QMainWindow):
         self.m.submit(lambda c: c._call(keymod.press, code), on_done=done, on_error=fail)
 
     def type_text(self, text):
+        if self.m.calc is None:
+            return
         try:
             codes = keymod.text_codes(text)
         except KeyError as e:
@@ -615,7 +635,7 @@ class MainWindow(QMainWindow):
         base = QFileDialog.getExistingDirectory(self, "Choose where to save the backup", self.files.local.current_dir)
         if not base:
             return
-        name = (self.m.info.name if self.m.info else "handheld").replace("/", "-")
+        name = local_name(self.m.info.name if self.m.info else "handheld")
         target = os.path.join(base, f"{name} backup {datetime.datetime.now():%Y-%m-%d %H%M}")
 
         def run(c, progress):
@@ -639,11 +659,21 @@ class MainWindow(QMainWindow):
             return
         overwrite = box.clickedButton() is over
 
+        skipped = []
+
         def run(c, progress):
-            return c.restore(src, "/", overwrite=overwrite,
+            return c.restore(src, "/", overwrite=overwrite, skipped=skipped,
                              progress=lambda path, n, total: progress(n, total, f"Restoring {path}"))
-        self.m.submit(run, on_done=lambda n: (self.say(f"Restored {n} files"), self.refresh()),
-                      on_error=self.error, with_progress=True)
+
+        def done(n):
+            msg = f"Restored {n} document(s)."
+            if skipped:
+                msg += (f"\n\n{len(skipped)} file(s) were left out (already on the handheld, or not a .tns "
+                        "document the handheld accepts — e.g. its own system files).")
+            self.say(msg.splitlines()[0])
+            QMessageBox.information(self, "Restore complete", msg)
+            self.refresh()
+        self.m.submit(run, on_done=done, on_error=self.error, with_progress=True)
 
     def install_os(self, path=None):
         info = self.m.info

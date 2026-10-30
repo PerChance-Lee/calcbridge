@@ -25,6 +25,14 @@ def _size(n):
     return f"{n:,}"
 
 
+def parse_key_arg(arg: str) -> tuple[str, int]:
+    """"down*3" -> ("down", 3); a plain "*" (multiply) or "**2"-like text is just a key."""
+    name, sep, n = arg.rpartition("*")
+    if sep and name and n.isdigit():
+        return name, int(n)
+    return arg, 1
+
+
 def remote(path: str) -> str:
     """Undo Git Bash's path conversion: on Windows it turns "/folder" into "C:/Program Files/Git/folder"."""
     m = re.match(r"^[A-Za-z]:/(?:.*/)?Git/(.*)$", path)
@@ -110,9 +118,9 @@ def cmd_install_os(c, a):
 
 def cmd_key(c, a):
     from .protocol import keys
-    for k in a.keys:
-        k, _, n = k.partition("*")
-        for _ in range(int(n or 1)):
+    for arg in a.keys:
+        k, n = parse_key_arg(arg)
+        for _ in range(n):
             c._call(keys.press, keys.key_code(k))
             time.sleep(a.delay)
 
@@ -125,9 +133,9 @@ def cmd_type(c, a):
 
 
 def cmd_build(_c, a):
+    from .textio import read_text
     from .tns import build_lua, build_notes, build_python, build_text
-    with open(a.source, encoding="utf-8") as f:
-        src = f.read()
+    src = read_text(a.source)
     ext = os.path.splitext(a.source)[1].lower()
     if a.kind == "notes" or (a.kind == "auto" and ext in (".md", ".notes")):
         data = build_notes([src.split("\n")])
@@ -149,11 +157,16 @@ def cmd_view(_c, a):
     doc = TnsDocument.from_file(a.file)
     print(doc.summary())
     if a.extract:
+        from .textio import safe_join
         os.makedirs(a.extract, exist_ok=True)
         for name, code in doc.python_files().items():
-            with open(os.path.join(a.extract, name), "w", encoding="utf-8", newline="\n") as f:
+            path = safe_join(a.extract, name)  # names come from the document; keep them in the folder
+            if path is None:
+                print("skipped unsafe name", repr(name))
+                continue
+            with open(path, "w", encoding="utf-8", newline="\n") as f:
                 f.write(code)
-            print("extracted", name)
+            print("extracted", os.path.basename(path))
 
 
 def main(argv=None) -> int:

@@ -254,6 +254,32 @@ def test_drag_handheld_items_to_computer(app_env, qtbot):
     assert (tmp / "themes.csv").read_bytes() == sim.get("/themes.csv").data
 
 
+def test_unknown_key_does_not_freeze_keypad(app_env, qtbot):
+    w, m, sim, _ = app_env
+    w.press_key("é")  # no such key on the handheld
+    assert w._keys_in_flight == 0
+    w.press_key("esc")
+    idle(qtbot, m)
+    assert w._keys_in_flight == 0 and sim.keys_pressed[-1] == keys.KEYS["esc"]
+
+
+def test_stale_cancel_does_not_abort_next_job(app_env, qtbot, monkeypatch):
+    w, m, sim, tmp = app_env
+    m.calc.cancel_event.set()  # e.g. Cancel clicked during a job that never checked it
+    monkeypatch.setattr(QFileDialog, "getExistingDirectory", staticmethod(lambda *a, **k: str(tmp)))
+    w.backup()
+    idle(qtbot, m)
+    assert any("backup" in p for p in os.listdir(tmp))
+
+
+def test_local_up_at_drive_root(app_env):
+    w, *_ = app_env
+    root = os.path.abspath(os.sep)
+    w.files.local.set_dir(root)
+    w.files.local.go_up()
+    assert w.files.local.current_dir == root
+
+
 def test_overwrite_prompt_choices(qtbot, monkeypatch):
     from PySide6.QtWidgets import QWidget
     parent = QWidget()

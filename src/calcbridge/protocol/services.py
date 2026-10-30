@@ -171,6 +171,23 @@ def _result(b: bytes) -> int:
     return struct.unpack_from(">H", b, 0)[0] if len(b) >= 2 else -1
 
 
+# FF xx result codes (hackspire / tilibs; 0x15 confirmed on a CX II: non-.tns uploads are refused).
+RESULT_MESSAGES = {
+    0x02: "the handheld is out of memory", 0x04: "the file is damaged", 0x07: "the path is too long",
+    0x09: "the folder doesn't exist", 0x0A: "it doesn't exist", 0x0F: "that folder name isn't allowed",
+    0x12: "a folder with that name already exists", 0x13: "the path is too long",
+    0x14: "that file name isn't allowed", 0x15: "the handheld only accepts TI-Nspire documents (.tns)",
+    0x16: "the name contains characters the handheld doesn't allow",
+    0x20: "that OS file isn't for this model", 0x80: "the handheld refuses to install an older OS",
+}
+
+
+def _why(code: int) -> str:
+    if code is not None and code >= 0 and (code >> 8) == 0xFF and (code & 0xFF) in RESULT_MESSAGES:
+        return RESULT_MESSAGES[code & 0xFF]
+    return f"code {code:04x}" if isinstance(code, int) and code >= 0 else "no reply"
+
+
 def list_dir(s: Session, path: str) -> list[DirEntry]:
     items = []
     with s.connect(SID_FILES):
@@ -225,15 +242,15 @@ def write_file(s: Session, path: str, data: bytes, progress=None) -> None:
         s.write(struct.pack(">H", 0x0301) + padded(path) + struct.pack(">I", len(data)))
         b = s.read()
         if not b or b[0] != 0x04:
-            raise RemoteError(f"The calculator refused {path} (is the name valid and is there space?)",
-                              _result(b))
+            code = _result(b)
+            raise RemoteError(f"The calculator refused {path}: {_why(code)}", code)
         for i in range(0, len(data), CHUNK):
             s.write(b"\x05" + data[i:i + CHUNK])
             if progress:
                 progress(min(i + CHUNK, len(data)), len(data))
         result = _result(s.read(30000))
     if result != OK:
-        raise RemoteError(f"Writing {path} failed (code {result:04x})", result)
+        raise RemoteError(f"Writing {path} failed: {_why(result)}", result)
     if progress and not data:
         progress(0, 0)
 
@@ -247,31 +264,31 @@ def _simple(s: Session, opcode: int, *paths: str, trailing_zero: bool) -> int:
 def make_dir(s: Session, path: str) -> None:
     r = _simple(s, 0x0A03, path, trailing_zero=False)
     if r != OK:
-        raise ExistsError(f"Couldn't create {path} (it may already exist)", r)
+        raise ExistsError(f"Couldn't create {path}: {_why(r)}", r)
 
 
 def remove_dir(s: Session, path: str) -> None:
     r = _simple(s, 0x0B03, path, trailing_zero=False)
     if r != OK:
-        raise RemoteError(f"Couldn't remove the folder {path} (it must exist and be empty)", r)
+        raise RemoteError(f"Couldn't remove the folder {path} (it must exist and be empty): {_why(r)}", r)
 
 
 def delete_file(s: Session, path: str) -> None:
     r = _simple(s, 0x0901, path, trailing_zero=True)
     if r != OK:
-        raise NotFoundError(f"Couldn't delete {path}", r)
+        raise NotFoundError(f"Couldn't delete {path}: {_why(r)}", r)
 
 
 def move(s: Session, src: str, dst: str) -> None:
     r = _simple(s, 0x2101, src, dst, trailing_zero=True)
     if r != OK:
-        raise RemoteError(f"Couldn't move {src} to {dst}", r)
+        raise RemoteError(f"Couldn't move {src} to {dst}: {_why(r)}", r)
 
 
 def copy_file(s: Session, src: str, dst: str) -> None:
     r = _simple(s, 0x0C01, src, dst, trailing_zero=True)
     if r != OK:
-        raise RemoteError(f"Couldn't copy {src} to {dst}", r)
+        raise RemoteError(f"Couldn't copy {src} to {dst}: {_why(r)}", r)
 
 
 def install_os(s: Session, image: bytes, progress=None) -> None:
@@ -280,19 +297,27 @@ def install_os(s: Session, image: bytes, progress=None) -> None:
         s.write(struct.pack(">BI", 0x03, len(image)))
         b = s.read()
         if not b or b[0] != 0x04:
-            raise RemoteError("The calculator refused the OS image", b[0] if b else None)
+            code = _result(b) if len(b) >= 2 else -1
+            raise RemoteError(f"The calculator refused the OS image: {_why(code)}", code)
+        # After the first chunk the calc answers FF 00 (header accepted) or 04 ("keep sending"); in the
+        # latter case it sends FF 00 later, so keep reading a status per chunk until it does.
+        awaiting_header = True
         for i in range(0, len(image), CHUNK):
             s.write(b"\x05" + image[i:i + CHUNK])
-            if i == 0:
-                code = _result(s.read())
-                if code not in (OK, 0x0400):
-                    raise RemoteError(f"The calculator rejected the OS image (code {code:04x})", code)
+            if awaiting_header:
+                st = s.read()
+                code = _result(st) if len(st) >= 2 else (0x0400 if st[:1] == b"\x04" else -1)
+                if code == OK:
+                    awaiting_header = False
+                elif code != 0x0400 and st[:1] != b"\x04":
+                    raise RemoteError(f"The calculator rejected the OS image: {_why(code)}", code)
             if progress:
                 progress("upload", min(i + CHUNK, len(image)), len(image))
         while True:
             b = s.read(120000)
-            if b[0] == 0xFF:
-                raise RemoteError("The calculator reported an error while installing the OS", b[1] if len(b) > 1 else None)
+            if b[:1] == b"\xff":
+                code = _result(b)
+                raise RemoteError(f"The calculator stopped the OS install: {_why(code)}", code)
             if progress:
                 progress("install", min(b[1], 100), 100)
             if b[1] >= 100:  # libnspire notes it can report over 100%

@@ -129,12 +129,16 @@ class Calculator:
         return dst
 
     def move(self, src: str, dst: str) -> None:
+        if _inside(dst, src):
+            raise ValueError("A folder can't be moved into itself")
         if self.exists(dst):
             raise ExistsError(f"{dst} already exists")
         self._call(svc.move, src, dst)
 
     def copy(self, src: str, dst: str) -> None:
         """Copy a file or a whole folder on the handheld."""
+        if _inside(dst, src):
+            raise ValueError("A folder can't be copied into itself")
         if self.exists(dst):
             raise ExistsError(f"{dst} already exists")
         st = self.stat(src)
@@ -143,8 +147,9 @@ class Calculator:
         if not st.is_dir:
             self._call(svc.copy_file, src, dst)
             return
+        children = self.list_dir(src)  # list before creating dst, so dst can never show up in it
         self._call(svc.make_dir, dst)
-        for e in self.list_dir(src):
+        for e in children:
             self._check_cancel()
             self.copy(e.path, svc.join(dst, e.name))
 
@@ -188,12 +193,15 @@ class Calculator:
         total = 0
         for e in self.list_dir(remote):
             self._check_cancel()
-            total += self.download(e.path, os.path.join(local, _local_name(e.name)), progress)
+            total += self.download(e.path, os.path.join(local, local_name(e.name)), progress)
         return total
 
     def upload(self, local: str, remote_folder: str, progress: Progress | None = None,
-               overwrite: bool = False, name: str | None = None) -> str:
-        """Upload a file or folder into remote_folder. Returns the remote path."""
+               overwrite: bool = False, name: str | None = None, skipped: list | None = None) -> str:
+        """Upload a file or folder into remote_folder. Returns the remote path.
+
+        The handheld only accepts .tns documents, so inside folders anything else (desktop.ini,
+        .DS_Store, stray .py files, ...) is left out and listed in `skipped`."""
         name = name or os.path.basename(os.path.normpath(local))
         dst = svc.join(remote_folder, name)
         if os.path.isdir(local):
@@ -201,8 +209,15 @@ class Calculator:
                 self.mkdir(dst)
             for child in sorted(os.listdir(local)):
                 self._check_cancel()
-                self.upload(os.path.join(local, child), dst, progress, overwrite)
+                path = os.path.join(local, child)
+                if not os.path.isdir(path) and not is_sendable(child):
+                    if skipped is not None and not is_junk(child):
+                        skipped.append(path)
+                    continue
+                self.upload(path, dst, progress, overwrite, skipped=skipped)
             return dst
+        if not is_sendable(name):
+            raise ValueError(f"{name}: the handheld only accepts TI-Nspire documents (.tns)")
         with open(local, "rb") as f:
             data = f.read()
         self.write_file(dst, data, progress, overwrite=overwrite)
@@ -214,40 +229,50 @@ class Calculator:
         files = [e for e in entries if not e.is_dir]
         for e in entries:
             if e.is_dir:
-                os.makedirs(os.path.join(local_dir, *map(_local_name, e.path.strip("/").split("/"))), exist_ok=True)
+                os.makedirs(os.path.join(local_dir, *map(local_name, e.path.strip("/").split("/"))), exist_ok=True)
         os.makedirs(local_dir, exist_ok=True)
         for n, e in enumerate(files, 1):
             self._check_cancel()
             if progress:
                 progress(e.path, n, len(files))
-            target = os.path.join(local_dir, *map(_local_name, e.path.strip("/").split("/")))
+            target = os.path.join(local_dir, *map(local_name, e.path.strip("/").split("/")))
             with open(target, "wb") as f:
                 f.write(self.read_file(e.path))
         return len(files)
 
     def restore(self, local_dir: str, remote_folder: str = "/", overwrite: bool = False,
-                progress: Callable[[str, int, int], None] | None = None) -> int:
-        """Upload a backup folder's contents into remote_folder. Returns the number of files."""
+                progress: Callable[[str, int, int], None] | None = None, skipped: list | None = None) -> int:
+        """Upload a backup folder's .tns documents into remote_folder. Returns how many were written.
+
+        Files the handheld won't take (anything not .tns, e.g. the system's own themes.csv) and files
+        that already exist when overwrite is False are listed in `skipped`."""
         files = []
         for root, _dirs, names in os.walk(local_dir):
             for nm in sorted(names):
-                files.append(os.path.join(root, nm))
+                path = os.path.join(root, nm)
+                if is_sendable(nm):
+                    files.append(path)
+                elif skipped is not None and not is_junk(nm):
+                    skipped.append(path)
+        written = 0
         for n, path in enumerate(files, 1):
             self._check_cancel()
             rel = os.path.relpath(path, local_dir).replace(os.sep, "/")
             folder = svc.join(remote_folder, os.path.dirname(rel)) if os.path.dirname(rel) else remote_folder
             if folder != "/" and not self.exists(folder):
                 self.mkdir(folder, parents=True)
+            dst = svc.join(folder, os.path.basename(path))
             if progress:
-                progress(svc.join(folder, os.path.basename(path)), n, len(files))
+                progress(dst, n, len(files))
+            if self.exists(dst) and not overwrite:
+                if skipped is not None:
+                    skipped.append(path)
+                continue
             with open(path, "rb") as f:
                 data = f.read()
-            dst = svc.join(folder, os.path.basename(path))
-            if self.exists(dst):
-                if not overwrite:
-                    continue
             self._call(svc.write_file, dst, data, None)
-        return len(files)
+            written += 1
+        return written
 
     def install_os(self, image: bytes, progress=None) -> None:
         if len(image) < 1024:
@@ -255,6 +280,28 @@ class Calculator:
         self._call(svc.install_os, image, progress)
 
 
-def _local_name(name: str) -> str:
-    """Handheld names may contain characters the PC's file system rejects."""
-    return "".join("_" if c in '<>:"\\|?*' else c for c in name)
+WINDOWS_RESERVED = {"CON", "PRN", "AUX", "NUL", *(f"COM{i}" for i in range(1, 10)),
+                    *(f"LPT{i}" for i in range(1, 10))}
+
+
+def local_name(name: str) -> str:
+    """A handheld name made safe for the PC's file system (Windows is the strictest)."""
+    s = "".join("_" if c in '<>:"\\/|?*' or ord(c) < 32 else c for c in name).rstrip(" .") or "_"
+    if s.split(".")[0].upper() in WINDOWS_RESERVED:
+        s = "_" + s
+    return s
+
+
+def is_sendable(name: str) -> bool:
+    """The handheld only accepts .tns documents (others are refused with FF 15)."""
+    return name.lower().endswith(".tns")
+
+
+def is_junk(name: str) -> bool:
+    """OS clutter that shouldn't be reported as 'skipped'."""
+    return name.startswith(".") or name.lower() in ("desktop.ini", "thumbs.db")
+
+
+def _inside(path: str, folder: str) -> bool:
+    path, folder = path.rstrip("/"), folder.rstrip("/")
+    return path == folder or path.startswith(folder + "/")

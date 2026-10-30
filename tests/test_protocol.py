@@ -224,7 +224,8 @@ def test_backup_and_restore(calc, sim, tmp_path):
     files = calc.backup(str(tmp_path / "bk"))
     assert files >= 3 and (tmp_path / "bk" / "B" / "c" / "doc.tns").read_bytes() == b"doc"
     calc.delete("/B")
-    assert calc.restore(str(tmp_path / "bk")) == files
+    # only the missing .tns comes back: themes.csv isn't a document and Getting Started is still there
+    assert calc.restore(str(tmp_path / "bk")) == 1
     assert calc.read_file("/B/c/doc.tns") == b"doc"
 
 

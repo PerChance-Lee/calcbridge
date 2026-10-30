@@ -149,7 +149,7 @@ class LocalPanel(QWidget):
         self.path_edit = QLineEdit()
         self.path_edit.returnPressed.connect(lambda: self.set_dir(self.path_edit.text()))
         up = QToolButton(text="↑", toolTip="Up one folder")
-        up.clicked.connect(lambda: self.set_dir(os.path.dirname(self.current_dir.rstrip("\\/")) or self.current_dir))
+        up.clicked.connect(self.go_up)
         browse = QToolButton(text="…", toolTip="Choose a folder")
         browse.clicked.connect(self._browse)
         bar = QHBoxLayout()
@@ -163,6 +163,11 @@ class LocalPanel(QWidget):
         lay.addWidget(self.tree)
         self.current_dir = ""
         self.set_dir(start_dir)
+
+    def go_up(self):
+        parent = os.path.dirname(self.current_dir)
+        if parent and parent != self.current_dir:  # at a drive/volume root there's nowhere to go
+            self.set_dir(parent)
 
     def set_dir(self, path):
         if path and os.path.isdir(path):

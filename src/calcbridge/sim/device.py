@@ -49,6 +49,7 @@ class SimCalculator:
         self.screen = self._default_screen()
         self.stats = collections.Counter()
         self.keys_pressed = []
+        self.replug_after_ack = False
         for folder in ("MyLib", "MyWidgets", "PyLib", "Examples"):
             self.root.children[folder] = _Node(True)
         self.put("/Examples/Getting Started.tns", b"*TIMLP0500" + bytes(200))
@@ -146,6 +147,10 @@ class SimCalculator:
                 return
             self.expected = (self.expected + 1) & 0xFFFF
             self._ack(m)
+            if self.replug_after_ack:  # test hook: restart the link while the host waits for a reply
+                self.replug_after_ack = False
+                self.replug()
+                return
             self._navnet(m["data"])
 
     def host_read(self):
@@ -279,6 +284,9 @@ class SimCalculator:
             if parent is None or not parent.is_dir or not name or size > self.flash_total - self.used():
                 self._reply(p, MISSING)
                 return
+            if not name.lower().endswith(".tns"):
+                self._reply(p, b"\xff\x15")  # like the real CX II: only .tns documents are accepted
+                return
             st.update(mode="write", path=path, size=size, buf=bytearray())
             self._reply(p, b"\x04")
             if size == 0:
@@ -337,7 +345,10 @@ class SimCalculator:
                 st["first"] = False
                 # stand-in for the real signature check: accept images that start like our test images
                 ok = bytes(st["buf"]).startswith(b"TI-Nspire")
-                self._reply(p, OK if ok else b"\x04\x01")
+                self._reply(p, OK if ok else b"\xff\x04")  # FF 04: damaged / wrong file
+                if not ok:
+                    st["mode"] = None
+                    return
             if len(st["buf"]) >= st["size"]:
                 for pct in (0, 25, 50, 75, 100):
                     self._reply(p, bytes([0x00, pct]))

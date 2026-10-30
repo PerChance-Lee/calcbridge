@@ -74,7 +74,7 @@ def tixc_encode(xml: str) -> bytes:
     while i < len(s):
         if s.startswith("<![CDATA[", i):
             end = s.index("]]>", i) + 3
-            out += _escape(s[i:end])
+            out += _escape(s[i:end], cdata=True)
             i = end
         elif s.startswith("</", i):
             tag_id = stack.pop()
@@ -98,10 +98,17 @@ def tixc_encode(xml: str) -> bytes:
     return bytes(out)
 
 
-def _escape(text: str) -> bytes:
+def _escape(text: str, cdata: bool = False) -> bytes:
+    """Characters -> TIXC bytes. Control characters are never written raw: in TIXC, 0x00-0x08 and 0x0B
+    start multi-byte sequences and 0x0C/0x0E-0x1F are tokens (XML forbids most of them anyway). Tab,
+    newline and CR survive as character references outside CDATA and raw inside it (Lua scripts)."""
     out = bytearray()
     for c in text:
         u = ord(c)
+        if u < 0x20:
+            if c in "\t\n\r":
+                out += c.encode() if cdata else f"&#{u};".encode()
+            continue  # drop other control characters
         if u < 0x80:
             out.append(u)
         elif u < 0x800:

@@ -68,7 +68,7 @@ jobs:
         run: |
           if [ "$RUNNER_OS" = Windows ]; then
             QT_QPA_FONTDIR='C:\Windows\Fonts' dist/CalcBridge/CalcBridge.exe --self-test
-            dist/CalcBridge/calcbridge-cli.exe --sim ls /
+            dist/CalcBridge/calcbridge-cli.exe --sim ls -r
           else
             find dist/CalcBridge.app -name 'libusb*'
             dist/CalcBridge.app/Contents/MacOS/CalcBridge --self-test

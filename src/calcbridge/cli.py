@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import argparse
 import os
+import re
 import sys
 import time
 
@@ -22,6 +23,14 @@ def _calc(args):
 
 def _size(n):
     return f"{n:,}"
+
+
+def remote(path: str) -> str:
+    """Undo Git Bash's path conversion: on Windows it turns "/folder" into "C:/Program Files/Git/folder"."""
+    m = re.match(r"^[A-Za-z]:/(?:.*/)?Git/(.*)$", path)
+    if m and os.name == "nt":
+        return "/" + m.group(1)
+    return path
 
 
 def cmd_info(c, a):
@@ -72,8 +81,6 @@ def cmd_cp(c, a):
 
 def cmd_shot(c, a):
     s = c.screenshot()
-    from PySide6.QtCore import QCoreApplication
-    _app = QCoreApplication.instance() or QCoreApplication([])  # loads image format plugins (jpg, ...)
     from .gui.screen_panel import screenshot_to_image
     img = screenshot_to_image(s)
     if not img.save(a.file):
@@ -212,6 +219,14 @@ def main(argv=None) -> int:
     s.add_argument("--extract", metavar="FOLDER", help="save its Python files here")
     s.set_defaults(fn=cmd_view, offline=True)
     a = p.parse_args(argv)
+    for attr in ("path", "remote", "src", "dst"):  # handheld paths only
+        if a.cmd in ("put", "restore") and attr != "remote":
+            continue
+        v = getattr(a, attr, None)
+        if isinstance(v, str):
+            setattr(a, attr, remote(v))
+        elif isinstance(v, list):
+            setattr(a, attr, [remote(x) for x in v])
     if getattr(a, "offline", False):
         a.fn(None, a)
         return 0

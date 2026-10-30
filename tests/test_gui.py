@@ -224,6 +224,36 @@ def test_unplug_shows_disconnected(app_env, qtbot, monkeypatch):
     assert "Connected" not in w.device.state.text()
 
 
+def test_drop_files_from_desktop_onto_handheld(app_env, qtbot):
+    from PySide6.QtCore import QMimeData, QPointF, Qt, QUrl
+    from PySide6.QtGui import QDropEvent
+    w, m, sim, tmp = app_env
+    f = tmp / "dropped.tns"
+    f.write_bytes(b"D" * 100)
+    mime = QMimeData()
+    mime.setUrls([QUrl.fromLocalFile(str(f))])
+    ev = QDropEvent(QPointF(5, 5), Qt.CopyAction, mime, Qt.LeftButton, Qt.NoModifier)
+    # dropping on a folder row puts the file in that folder; on empty space, in the current folder
+    target = w.files.remote.tree._target_folder(QPointF(5, 5).toPoint())
+    w.files.remote.tree.dropEvent(ev)
+    idle(qtbot, m)
+    assert sim.get(f"{target.rstrip('/')}/dropped.tns").data == b"D" * 100
+
+
+def test_drag_handheld_items_to_computer(app_env, qtbot):
+    import json
+
+    from PySide6.QtCore import QMimeData, QPointF, Qt
+    from PySide6.QtGui import QDropEvent
+    w, m, sim, tmp = app_env
+    mime = QMimeData()
+    mime.setData(files_panel.REMOTE_MIME, json.dumps(["/themes.csv"]).encode())
+    ev = QDropEvent(QPointF(5, 5), Qt.CopyAction, mime, Qt.LeftButton, Qt.NoModifier)
+    w.files.local.tree.dropEvent(ev)
+    idle(qtbot, m)
+    assert (tmp / "themes.csv").read_bytes() == sim.get("/themes.csv").data
+
+
 def test_overwrite_prompt_choices(qtbot, monkeypatch):
     from PySide6.QtWidgets import QWidget
     parent = QWidget()

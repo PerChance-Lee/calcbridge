@@ -1,6 +1,20 @@
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { useApp, type Settings } from "../store";
 
+const SHORTCUTS: [string, string][] = [
+  ["Ctrl+1 … Ctrl+6", "Files, Screen, Remote keypad, Create, Viewer, Log"],
+  ["Enter / double-click", "Open a folder; view a .tns; turn a .py, .lua, .txt or .md into a document"],
+  ["Backspace", "Up one folder"],
+  ["F5", "Refresh the handheld's list and details"],
+  ["F2", "Rename"],
+  ["Del", "Delete from the handheld (asks first)"],
+  ["Ctrl+C, Ctrl+X, Ctrl+V", "Copy, cut and paste on the handheld"],
+  ["Ctrl+Shift+D", "Duplicate on the handheld (“Copy of …”)"],
+  ["Ctrl+A", "Select everything in a list"],
+  ["Drag between the panes", "Send or receive; drop on a folder to put it there"],
+  ["Esc", "Cancel a drag, close a dialog"],
+];
+
 const REPO = "https://github.com/PerChance-Lee/calcbridge";
 const TI_OS = "https://education.ti.com/en/products/calculators/graphing-calculators/ti-nspire-cx-ii";
 
@@ -51,6 +65,17 @@ export function SettingsView() {
           <h2>Files</h2>
           <Toggle k="confirmDelete" label="Ask before deleting" desc="The handheld has no recycle bin." />
           <Toggle k="showHidden" label="Show hidden files on this computer" desc="Dot files and files marked hidden or system." />
+        </div>
+        <div className="card">
+          <h2>Keyboard shortcuts</h2>
+          <div className="syntax">
+            {SHORTCUTS.map(([keys, what]) => (
+              <div key={keys} style={{ display: "contents" }}>
+                <code>{keys}</code>
+                <span>{what}</span>
+              </div>
+            ))}
+          </div>
         </div>
         <div className="card">
           <div className="about">

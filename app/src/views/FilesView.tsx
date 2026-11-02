@@ -502,30 +502,28 @@ export function FilesView() {
     };
   }, [drag?.from, drag?.rows]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // files dragged in from Explorer / Finder
-  const dropRef = useRef<(paths: string[], x: number, y: number) => void>(() => {});
-  dropRef.current = (paths, x, y) => {
+  // Files dragged in from Explorer / Finder. Subscribe once; the handler reads this render's state.
+  const nativeDrop = useRef<(type: string, paths: string[], x: number, y: number) => void>(() => {});
+  nativeDrop.current = (type, paths, x, y) => {
+    if (type === "leave") return setNativeOver(null);
     const { side, folder } = sideAt(x, y);
+    if (type === "over" || type === "enter") return setNativeOver(side);
+    if (type !== "drop") return;
+    setNativeOver(null);
     if (side === "handheld") send(paths, folder ?? remotePath);
     else if (side === "local") app.toast("info", "Drop them on the handheld side", "Files dropped on the handheld's list are sent to it.");
   };
   useEffect(() => {
     const un = getCurrentWebview().onDragDropEvent((event) => {
       const p = event.payload;
-      if (p.type === "leave") return setNativeOver(null);
       const scale = window.devicePixelRatio || 1;
-      const x = p.position.x / scale;
-      const y = p.position.y / scale;
-      if (p.type === "over" || p.type === "enter") setNativeOver(sideAt(x, y).side);
-      else if (p.type === "drop") {
-        setNativeOver(null);
-        dropRef.current(p.paths, x, y);
-      }
+      const pos = "position" in p ? p.position : { x: 0, y: 0 };
+      nativeDrop.current(p.type, "paths" in p ? p.paths : [], pos.x / scale, pos.y / scale);
     });
     return () => {
       un.then((f) => f());
     };
-  }); // re-subscribes with fresh closures each render; cheap
+  }, []);
 
   // ------------------------------------------------------------------ render
   const localCrumbs = (() => {

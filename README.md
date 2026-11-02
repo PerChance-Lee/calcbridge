@@ -50,6 +50,12 @@ Plug the calculator in with its USB cable and turn it on — CalcBridge connects
 | OS update | Install a `.tco2` / `.tcc2` / `.tct2`, with a check that the file matches the model, then reconnect after the restart | ⚠️ implemented from libnspire and tested on the simulator only — never run on real hardware |
 | Command line | Everything above, scriptable (`calcbridge --help`) | ✅ tested on a CX II |
 
+| Live screen | Remote keypad |
+|---|---|
+| ![The handheld's screen, live](docs/images/screen.png) | ![Remote keypad](docs/images/keypad.png) |
+| **Create** — markup on the left, the handheld's pages on the right | **Viewer** — a document from the handheld |
+| ![Create a Notes page with math](docs/images/create.png) | ![Viewer](docs/images/viewer.png) |
+
 **Not possible over USB** (no known protocol): renaming the handheld, reading the battery level (the CX II
 reports it as unknown), exiting Press-to-Test, and TI's document engine features (editing Graphs pages,
 the emulator). Older CX / CX CAS models (USB PID `0xE012`) use a different link layer and aren't

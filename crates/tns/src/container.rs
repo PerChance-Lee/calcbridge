@@ -2,9 +2,8 @@
 //! document version) instead of `PK\3\4`, and whose end-of-central-directory record starts with `TIPD`.
 
 use flate2::Compression;
-use flate2::read::DeflateDecoder;
 use flate2::write::DeflateEncoder;
-use std::io::{Read, Write};
+use std::io::Write;
 
 use crate::{Result, TnsError, crypto, tixc};
 
@@ -64,6 +63,9 @@ fn rfind(hay: &[u8], needle: &[u8]) -> Option<usize> {
     hay.windows(needle.len()).rposition(|w| w == needle)
 }
 
+/// The most a whole document may unpack to.
+pub const MAX_DOCUMENT: usize = 256 << 20;
+
 /// Parse a document. Returns (document version, entries).
 pub fn read(blob: &[u8]) -> Result<(u16, Vec<Entry>)> {
     if !blob.starts_with(b"*TIMLP") {
@@ -79,6 +81,7 @@ pub fn read(blob: &[u8]) -> Result<(u16, Vec<Entry>)> {
     let count = u16_at(blob, eocd + 10)? as usize;
     let cd_off = u32_at(blob, eocd + 16)? as usize;
     let mut entries = Vec::with_capacity(count);
+    let mut total = 0usize;
     let mut p = cd_off;
     for _ in 0..count {
         if blob.get(p..p + 4) != Some(b"PK\x01\x02") {
@@ -102,15 +105,13 @@ pub fn read(blob: &[u8]) -> Result<(u16, Vec<Entry>)> {
         let raw = blob.get(start..start + csize).ok_or_else(|| TnsError::Damaged("truncated entry".into()))?;
         let (data, method) = match method {
             13 => (tixc::decode(&crypto::decrypt(raw)?)?.into_bytes(), Method::Ti),
-            8 => {
-                let mut out = Vec::new();
-                DeflateDecoder::new(raw)
-                    .read_to_end(&mut out)
-                    .map_err(|e| TnsError::Damaged(format!("{name}: {e}")))?;
-                (out, Method::Deflate)
-            }
+            8 => (crypto::inflate(raw, &name)?, Method::Deflate),
             _ => (raw.to_vec(), Method::Store),
         };
+        total += data.len();
+        if total > MAX_DOCUMENT {
+            return Err(TnsError::Damaged(format!("unpacks to more than {} MB", MAX_DOCUMENT >> 20)));
+        }
         entries.push(Entry { name, data, method });
     }
     Ok((version, entries))
@@ -208,6 +209,15 @@ mod tests {
         assert_eq!(back.iter().map(|e| e.name.as_str()).collect::<Vec<_>>(), ["Document.xml", "Problem1.xml", "a.py"]);
         assert!(back[0].text().contains("<nps>1</nps>"));
         assert_eq!(back[2].data, b"print(1)\n");
+    }
+
+    #[test]
+    fn refuses_a_part_that_unpacks_too_far() {
+        // 65 MB of zeros deflates to a few dozen KB: a "zip bomb" in miniature
+        let entries = vec![Entry::file("huge.bin", vec![0; crypto::MAX_INFLATED + (1 << 20)])];
+        let blob = write(&entries, DEFAULT_VERSION).unwrap();
+        assert!(blob.len() < 1 << 20);
+        assert!(matches!(read(&blob), Err(TnsError::Damaged(_))));
     }
 
     #[test]

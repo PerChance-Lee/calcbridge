@@ -83,10 +83,23 @@ pub fn decrypt(payload: &[u8]) -> Result<Vec<u8>> {
     let seed = u32::from_le_bytes(header[12..16].try_into().unwrap());
     let mut body = payload[40..].to_vec();
     keystream_xor(&mut body, seed, &header[16..37], blocks);
+    inflate(&body, "an encrypted entry")
+}
+
+/// The most one document part may inflate to. TI's own parts are far smaller; the cap keeps a crafted
+/// file from exhausting memory.
+pub const MAX_INFLATED: usize = 64 << 20;
+
+/// Raw deflate, refusing anything that inflates past [`MAX_INFLATED`].
+pub(crate) fn inflate(raw: &[u8], what: &str) -> Result<Vec<u8>> {
     let mut out = Vec::new();
-    DeflateDecoder::new(&body[..])
+    DeflateDecoder::new(raw)
+        .take(MAX_INFLATED as u64 + 1)
         .read_to_end(&mut out)
-        .map_err(|e| TnsError::Damaged(format!("inflate failed: {e}")))?;
+        .map_err(|e| TnsError::Damaged(format!("{what}: inflate failed: {e}")))?;
+    if out.len() > MAX_INFLATED {
+        return Err(TnsError::Damaged(format!("{what} unpacks to more than {} MB", MAX_INFLATED >> 20)));
+    }
     Ok(out)
 }
 

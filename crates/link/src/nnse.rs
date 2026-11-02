@@ -369,7 +369,11 @@ impl Link {
 
     // ---------------------------------------------------------------- open
     /// Bring the link up and deliver the first stream payload (NavNet's address assignment).
-    pub fn open(&mut self, first_payload: &[u8], mut progress: Option<&mut (dyn FnMut(usize, usize) + '_)>) -> Result<()> {
+    pub fn open(
+        &mut self,
+        first_payload: &[u8],
+        mut progress: Option<&mut (dyn FnMut(usize, usize) + '_)>,
+    ) -> Result<()> {
         self.inbox.clear();
         self.reset_seen = false;
         self.ready = false;

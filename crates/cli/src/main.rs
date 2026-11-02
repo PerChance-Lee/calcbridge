@@ -227,7 +227,13 @@ fn run(cli: Cli) -> Res {
                 println!("no TI-Nspire CX II connected");
             }
             for d in found {
-                println!("{}  serial {}  bus {} address {}", d.product, d.serial.as_deref().unwrap_or("-"), d.bus, d.address);
+                println!(
+                    "{}  serial {}  bus {} address {}",
+                    d.product,
+                    d.serial.as_deref().unwrap_or("-"),
+                    d.bus,
+                    d.address
+                );
             }
             return Ok(());
         }
@@ -268,7 +274,8 @@ fn run_on(c: &Calculator, cmd: Cmd) -> Res {
         }
         Cmd::Get { remote: r, local } => {
             let r = remote(&r);
-            let local = local.unwrap_or_else(|| PathBuf::from(calcbridge_link::local_name(calcbridge_link::services::basename(&r))));
+            let local = local
+                .unwrap_or_else(|| PathBuf::from(calcbridge_link::local_name(calcbridge_link::services::basename(&r))));
             let n = c.download(&r, &local, Some(&mut progress_line("receiving")))?;
             println!("received {} bytes", size(n));
         }
@@ -304,7 +311,13 @@ fn run_on(c: &Calculator, cmd: Cmd) -> Res {
         }
         Cmd::Restore { folder, remote: r, force } => {
             let mut skipped = Vec::new();
-            let n = c.restore(&folder, &remote(&r), force, Some(&mut |p: &str, i, t| println!("[{i}/{t}] {p}")), Some(&mut skipped))?;
+            let n = c.restore(
+                &folder,
+                &remote(&r),
+                force,
+                Some(&mut |p: &str, i, t| println!("[{i}/{t}] {p}")),
+                Some(&mut skipped),
+            )?;
             println!("restored {n} files");
             if !skipped.is_empty() {
                 println!("skipped {} (not documents, or already there)", skipped.len());
@@ -317,16 +330,20 @@ fn run_on(c: &Calculator, cmd: Cmd) -> Res {
                 return Err(format!("this handheld needs a {want} file (use --force to send anyway)").into());
             }
             let image = std::fs::read(&file)?;
-            c.install_os(&image, Some(&mut |stage, d, t| {
-                eprint!("\r{stage:?}: {d}/{t}   ");
-                let _ = std::io::stderr().flush();
-            }))?;
+            c.install_os(
+                &image,
+                Some(&mut |stage, d, t| {
+                    eprint!("\r{stage:?}: {d}/{t}   ");
+                    let _ = std::io::stderr().flush();
+                }),
+            )?;
             println!("\ndone; the handheld restarts");
         }
         Cmd::Key { keys: names, delay } => {
             for arg in &names {
                 let (name, n) = parse_key_arg(arg);
-                let code = keys::key_code(name).ok_or_else(|| format!("unknown key {name:?} (see `calcbridge keys`)"))?;
+                let code =
+                    keys::key_code(name).ok_or_else(|| format!("unknown key {name:?} (see `calcbridge keys`)"))?;
                 for _ in 0..n {
                     c.press_key(code)?;
                     std::thread::sleep(Duration::from_secs_f64(delay.max(0.0)));
@@ -429,7 +446,9 @@ mod tests {
     #[test]
     fn builds_each_kind() {
         let dir = tempfile::tempdir().unwrap();
-        for (name, body) in [("a.md", "# Title\n$x^{2}$"), ("b.py", "print(1)\n"), ("c.lua", "x = 1\n"), ("d.txt", "hi")] {
+        for (name, body) in
+            [("a.md", "# Title\n$x^{2}$"), ("b.py", "print(1)\n"), ("c.lua", "x = 1\n"), ("d.txt", "hi")]
+        {
             let src = dir.path().join(name);
             std::fs::write(&src, body).unwrap();
             build(&src, None, Kind::Auto).unwrap();

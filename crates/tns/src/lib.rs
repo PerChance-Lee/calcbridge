@@ -10,12 +10,12 @@ pub mod crypto;
 pub mod document;
 pub mod notes;
 pub mod r2d;
-pub mod tixc;
 pub mod textio;
+pub mod tixc;
 pub mod tixc_decode;
 
 pub use container::{Entry, Method};
-pub use document::{build_lua, build_notes, build_python, build_text, Page, TnsDocument};
+pub use document::{Page, TnsDocument, build_lua, build_notes, build_python, build_text};
 pub use notes::{MathSyntaxError, Paragraph};
 
 #[derive(Debug, thiserror::Error)]

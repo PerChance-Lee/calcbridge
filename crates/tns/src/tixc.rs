@@ -55,7 +55,7 @@ pub fn encode(xml: &str) -> Result<Vec<u8>> {
             if tag_id < 256 {
                 out.extend_from_slice(&[0x0E, tag_id as u8]);
             } else {
-                out.extend_from_slice(s[i..=end].as_bytes());
+                out.extend_from_slice(&s.as_bytes()[i..=end]);
             }
             i = end + 1;
         } else if rest.starts_with("<!--") {

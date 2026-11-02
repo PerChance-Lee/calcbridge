@@ -21,11 +21,14 @@ fn check(name: &str, out: &mut Vec<String>, f: impl FnOnce() -> Result<String, S
 pub fn run() -> i32 {
     let mut out = vec![format!("CalcBridge {} self-test", env!("CARGO_PKG_VERSION"))];
     let mut ok = true;
-    ok &= check("USB", &mut out, || usb::list().map(|d| format!("{} calculator(s) connected", d.len())).map_err(|e| e.to_string()));
+    ok &= check("USB", &mut out, || {
+        usb::list().map(|d| format!("{} calculator(s) connected", d.len())).map_err(|e| e.to_string())
+    });
     ok &= check("simulated handheld", &mut out, || {
         let sim = Sim::new(SimConfig { idle_drop: None, ..SimConfig::default() });
-        let calc = Calculator::open(Box::new(sim.transport("sim")), Options { state_file: None, ..Options::default() }, None)
-            .map_err(|e| e.to_string())?;
+        let calc =
+            Calculator::open(Box::new(sim.transport("sim")), Options { state_file: None, ..Options::default() }, None)
+                .map_err(|e| e.to_string())?;
         let info = calc.info().map_err(|e| e.to_string())?;
         calc.write_file("/selftest.tns", b"*TIMLP0500", None, false).map_err(|e| e.to_string())?;
         let files = calc.list_dir("/").map_err(|e| e.to_string())?.len();
@@ -35,7 +38,8 @@ pub fn run() -> i32 {
         Ok(format!("\"{}\", {files} items, {}x{} screen, {} byte PNG", info.name, shot.width, shot.height, png.len()))
     });
     ok &= check("documents", &mut out, || {
-        let blob = build_notes(&[vec![Paragraph::new(r"$x_{k+1}=x_{k}-\frac{f(x_{k})}{f'(x_{k})}$")]]).map_err(|e| e.to_string())?;
+        let blob = build_notes(&[vec![Paragraph::new(r"$x_{k+1}=x_{k}-\frac{f(x_{k})}{f'(x_{k})}$")]])
+            .map_err(|e| e.to_string())?;
         let doc = TnsDocument::from_bytes(&blob).map_err(|e| e.to_string())?;
         let trees = doc.notes_trees();
         let paras = r2d::parse_r2d(&trees.first().ok_or("no Notes page")?.2)?;

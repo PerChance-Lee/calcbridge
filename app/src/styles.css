@@ -368,3 +368,6 @@ a { color: var(--accent); }
 .editor textarea.wrap { white-space: pre-wrap; overflow-wrap: anywhere; }
 
 .path-input { flex: 1; height: 26px; font-size: 12.5px; }
+.py-preview { font-family: var(--mono); font-size: 11.2px; line-height: 1.45; white-space: pre; overflow: hidden; }
+.py-preview .long { background: #fff3d6; }
+.py-preview .more { color: #b45309; }

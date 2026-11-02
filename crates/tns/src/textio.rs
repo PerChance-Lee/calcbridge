@@ -68,9 +68,15 @@ mod tests {
     #[test]
     fn safe_join_stays_in_folder() {
         let dir = Path::new("out");
-        for name in ["../../evil.py", "..\\..\\evil.py", "/etc/evil.py", "C:\\Windows\\evil.py", "C:evil.py", "..",
-            "sub/dir/evil.py"]
-        {
+        for name in [
+            "../../evil.py",
+            "..\\..\\evil.py",
+            "/etc/evil.py",
+            "C:\\Windows\\evil.py",
+            "C:evil.py",
+            "..",
+            "sub/dir/evil.py",
+        ] {
             if let Some(p) = safe_join(dir, name) {
                 assert_eq!(p.parent(), Some(dir), "{name} -> {}", p.display());
             }

@@ -9,7 +9,9 @@ type K = [label: string, key: string, cls?: string];
 
 const TOP: K[][] = [
   [["esc", "esc", "dark"], ["tab", "tab", "dark"], ["home", "home", "dark"], ["menu", "menu", "dark"]],
-  [["ctrl", "ctrl", "accent"], ["shift", "shift", "dark"], ["var", "var", "dark"], ["del", "del", "dark"]],
+  // Remote key events don't combine, so ctrl and shift come as their own combined keys.
+  [["≈ ctrl·enter", "ctrl_enter", "accent"], ["ctrl·menu", "ctrl_menu", "dark"], ["var", "var", "dark"], ["del", "del", "dark"]],
+  [["ctrl·tab", "ctrl_tab", "dark"], ["shift·tab", "shift_tab", "dark"], ["ctrl·home", "ctrl_home", "dark"], ["ctrl·var", "ctrl_var", "dark"]],
 ];
 const MATH: K[][] = [
   [["=", "="], ["sin", "sin"], ["cos", "cos"], ["tan", "tan"], ["^", "^"], ["x²", "square"]],
@@ -136,9 +138,8 @@ export function KeypadView() {
               {row.split("").map((c) => key([c.toUpperCase(), c, "letter"]))}
             </div>
           ))}
-          <div className="row" style={{ gridTemplateColumns: "1fr 1fr" }}>
+          <div className="row" style={{ gridTemplateColumns: "1fr" }}>
             {key(["space", " "])}
-            {key(["shift+tab", "shift_tab"])}
           </div>
           <h3>Type text</h3>
           <div style={{ display: "flex", gap: 6 }}>

@@ -13,7 +13,8 @@ use serde::{Deserialize, Serialize};
 const NO_FILL: u32 = 268_435_199;
 pub const TEXT_FONT: &str = "TI-Nspire Sans";
 pub const MATH_FONT: &str = "TI-Nspire";
-const UPRIGHT_WORDS: [&str; 13] = ["sin", "cos", "tan", "ln", "log", "lim", "max", "min", "abs", "fl", "DP", "exp", "det"];
+const UPRIGHT_WORDS: [&str; 13] =
+    ["sin", "cos", "tan", "ln", "log", "lim", "max", "min", "abs", "fl", "DP", "exp", "det"];
 
 fn substitute(c: char) -> char {
     match c {
@@ -151,11 +152,7 @@ fn leaf(name: &str, runs: &[(usize, String)]) -> String {
     let ucf = if runs.iter().any(|(f, _)| *f != 0) { " ucf=\"1\"" } else { "" };
     let text: String = runs.iter().map(|(_, t)| t.as_str()).collect();
     let head = format!("<leaf name=\"{name}\" np=\"{}\" {}{ucf}", runs.len(), attrs.join(" "));
-    if text.is_empty() {
-        head + "/>"
-    } else {
-        format!("{head}>{}</leaf>", xml_escape(&text, false))
-    }
+    if text.is_empty() { head + "/>" } else { format!("{head}>{}</leaf>", xml_escape(&text, false)) }
 }
 
 // --------------------------------------------------------------------- math
@@ -174,14 +171,58 @@ pub enum MathItem {
 
 /// `\name` commands that stand for one character.
 pub const SYMBOLS: &[(&str, char)] = &[
-    ("alpha", 'α'), ("beta", 'β'), ("gamma", 'γ'), ("delta", 'δ'), ("epsilon", 'ε'), ("varepsilon", 'ε'),
-    ("zeta", 'ζ'), ("eta", 'η'), ("theta", 'θ'), ("iota", 'ι'), ("kappa", 'κ'), ("lambda", 'λ'), ("mu", 'μ'),
-    ("nu", 'ν'), ("xi", 'ξ'), ("pi", 'π'), ("rho", 'ρ'), ("sigma", 'σ'), ("tau", 'τ'), ("phi", 'φ'),
-    ("varphi", 'φ'), ("chi", 'χ'), ("psi", 'ψ'), ("omega", 'ω'), ("Gamma", 'Γ'), ("Delta", 'Δ'), ("Theta", 'Θ'),
-    ("Lambda", 'Λ'), ("Pi", 'Π'), ("Sigma", 'Σ'), ("Phi", 'Φ'), ("Psi", 'Ψ'), ("Omega", 'Ω'), ("infty", '∞'),
-    ("le", '≤'), ("leq", '≤'), ("ge", '≥'), ("geq", '≥'), ("ne", '≠'), ("neq", '≠'), ("pm", '±'), ("cdot", '·'),
-    ("times", '×'), ("div", '÷'), ("to", '→'), ("rightarrow", '→'), ("approx", '≈'), ("degree", '°'),
-    ("angle", '∠'), ("dots", '…'), ("ldots", '…'), ("cdots", '…'),
+    ("alpha", 'α'),
+    ("beta", 'β'),
+    ("gamma", 'γ'),
+    ("delta", 'δ'),
+    ("epsilon", 'ε'),
+    ("varepsilon", 'ε'),
+    ("zeta", 'ζ'),
+    ("eta", 'η'),
+    ("theta", 'θ'),
+    ("iota", 'ι'),
+    ("kappa", 'κ'),
+    ("lambda", 'λ'),
+    ("mu", 'μ'),
+    ("nu", 'ν'),
+    ("xi", 'ξ'),
+    ("pi", 'π'),
+    ("rho", 'ρ'),
+    ("sigma", 'σ'),
+    ("tau", 'τ'),
+    ("phi", 'φ'),
+    ("varphi", 'φ'),
+    ("chi", 'χ'),
+    ("psi", 'ψ'),
+    ("omega", 'ω'),
+    ("Gamma", 'Γ'),
+    ("Delta", 'Δ'),
+    ("Theta", 'Θ'),
+    ("Lambda", 'Λ'),
+    ("Pi", 'Π'),
+    ("Sigma", 'Σ'),
+    ("Phi", 'Φ'),
+    ("Psi", 'Ψ'),
+    ("Omega", 'Ω'),
+    ("infty", '∞'),
+    ("le", '≤'),
+    ("leq", '≤'),
+    ("ge", '≥'),
+    ("geq", '≥'),
+    ("ne", '≠'),
+    ("neq", '≠'),
+    ("pm", '±'),
+    ("cdot", '·'),
+    ("times", '×'),
+    ("div", '÷'),
+    ("to", '→'),
+    ("rightarrow", '→'),
+    ("approx", '≈'),
+    ("degree", '°'),
+    ("angle", '∠'),
+    ("dots", '…'),
+    ("ldots", '…'),
+    ("cdots", '…'),
 ];
 
 struct Parser {
@@ -456,7 +497,8 @@ pub fn notes_card(paragraphs: &[Paragraph]) -> Result<String, MathSyntaxError> {
     } else {
         format!("{}<cursor index=\"0\"/>{}", &first[..=j], &first[j + 1..])
     };
-    let tree = format!("<r2dtotree version=\"1\">{}<node name=\"1doc\">{}</node></r2dtotree>", fmt.xml(), body.concat());
+    let tree =
+        format!("<r2dtotree version=\"1\">{}<node name=\"1doc\">{}</node></r2dtotree>", fmt.xml(), body.concat());
     Ok(format!(
         "<card clay=\"0\" h1=\"10000\" h2=\"10000\" w1=\"10000\" w2=\"10000\"><isDummyCard>0</isDummyCard><flag>0</flag>\
          <wdgt xmlns:np=\"urn:TI.Notepad\" type=\"TI.Notepad\" ver=\"2.0\"><np:mFlags>0</np:mFlags><np:value>3</np:value>\

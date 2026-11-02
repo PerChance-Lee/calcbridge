@@ -8,11 +8,15 @@ use calcbridge_link::nnse::{self, Message};
 use calcbridge_link::services::{self, rle_decode, rle_encode};
 use calcbridge_link::sim::{Sim, SimConfig};
 use calcbridge_link::transport::Transport;
-use calcbridge_link::{Calculator, Error, LinkConfig, OsStage, Options, RemoteKind};
+use calcbridge_link::{Calculator, Error, LinkConfig, Options, OsStage, RemoteKind};
 
 fn fast_link() -> LinkConfig {
     // keep retry timeouts short; the simulator answers instantly
-    LinkConfig { ack_timeout: Duration::from_millis(200), probe_timeout: Duration::from_millis(40), ..LinkConfig::default() }
+    LinkConfig {
+        ack_timeout: Duration::from_millis(200),
+        probe_timeout: Duration::from_millis(40),
+        ..LinkConfig::default()
+    }
 }
 
 fn opts(state: &Path) -> Options {
@@ -478,8 +482,7 @@ fn upload_folder_sends_only_tns() {
     calc.upload(&d, "/", None, false, None, Some(&mut skipped)).unwrap();
     let names: Vec<String> = calc.list_dir("/pack").unwrap().into_iter().map(|e| e.name).collect();
     assert_eq!(names, ["a.tns"]);
-    let skipped: Vec<String> =
-        skipped.iter().map(|p| p.file_name().unwrap().to_string_lossy().into_owned()).collect();
+    let skipped: Vec<String> = skipped.iter().map(|p| p.file_name().unwrap().to_string_lossy().into_owned()).collect();
     assert_eq!(skipped, ["notes.txt"]); // OS clutter isn't reported
     assert!(matches!(calc.upload(&d.join("notes.txt"), "/", None, false, None, None), Err(Error::Invalid(_))));
 }

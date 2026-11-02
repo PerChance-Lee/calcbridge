@@ -50,7 +50,7 @@ impl TextDecoder {
                             }
                             return Ok(());
                         }
-                        self.tmp = (((b & 7) | 0xF0) as u32 * 4 & 0xFF) as u8;
+                        self.tmp = ((((b & 7) | 0xF0) as u32 * 4) & 0xFF) as u8;
                         self.count = 1;
                         self.state = 27;
                         return Ok(());
@@ -431,7 +431,8 @@ pub fn decode_tixc(data: &[u8]) -> Result<Vec<u8>, String> {
                 state = 3;
             }
             13 => {
-                let attr = attrs.get(b as usize).ok_or_else(|| format!("attribute dictionary index {b} out of range"))?;
+                let attr =
+                    attrs.get(b as usize).ok_or_else(|| format!("attribute dictionary index {b} out of range"))?;
                 out.extend_from_slice(attr);
                 out.extend_from_slice(b"=\"");
                 pos += 1;

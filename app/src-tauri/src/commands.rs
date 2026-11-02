@@ -5,15 +5,17 @@ use std::path::{Path, PathBuf};
 use calcbridge_link::services::{basename, join};
 use calcbridge_link::{Calculator, DeviceInfo, DirEntry, OsStage, check_name, is_sendable, local_name, usb};
 use calcbridge_tns::r2d::{self, ViewParagraph};
-use calcbridge_tns::{Page, Paragraph, TnsDocument, build_lua, build_notes, build_python, build_text, document, textio};
+use calcbridge_tns::{
+    Page, Paragraph, TnsDocument, build_lua, build_notes, build_python, build_text, document, textio,
+};
 use serde::{Deserialize, Serialize};
 use tauri::ipc::Response;
 use tauri::{AppHandle, Manager, async_runtime};
 
+use crate::applog::{self, LogLine};
 use crate::device::{self, Device, Status};
 use crate::error::{CmdError, CmdResult};
 use crate::jobs::{self, JobCtx};
-use crate::applog::{self, LogLine};
 
 /// Run blocking work off the async runtime's threads.
 async fn blocking<T: Send + 'static>(f: impl FnOnce() -> CmdResult<T> + Send + 'static) -> CmdResult<T> {
@@ -102,7 +104,11 @@ pub async fn rename(app: AppHandle, path: String, new_name: String) -> CmdResult
 /// Delete handheld files and folders (folders with everything in them).
 #[tauri::command]
 pub fn delete(app: AppHandle, paths: Vec<String>) -> CmdResult<u64> {
-    let title = if paths.len() == 1 { format!("Deleting {}", basename(&paths[0])) } else { format!("Deleting {} items", paths.len()) };
+    let title = if paths.len() == 1 {
+        format!("Deleting {}", basename(&paths[0]))
+    } else {
+        format!("Deleting {} items", paths.len())
+    };
     jobs::submit(&app, title, move |ctx| {
         for (i, p) in paths.iter().enumerate() {
             ctx.progress(i as u64, paths.len() as u64, p);
@@ -208,9 +214,18 @@ fn convert_file(path: &Path, kind: &str) -> CmdResult<Vec<u8>> {
 /// handheld refuses anything else); with `convert`, picked .py/.lua/.txt/.md files are turned into
 /// documents first.
 #[tauri::command]
-pub fn upload(app: AppHandle, locals: Vec<String>, folder: String, existing: Existing, convert: Option<bool>) -> CmdResult<u64> {
+pub fn upload(
+    app: AppHandle,
+    locals: Vec<String>,
+    folder: String,
+    existing: Existing,
+    convert: Option<bool>,
+) -> CmdResult<u64> {
     let title = match locals.as_slice() {
-        [one] => format!("Sending {}", Path::new(one).file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default()),
+        [one] => format!(
+            "Sending {}",
+            Path::new(one).file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default()
+        ),
         many => format!("Sending {} items", many.len()),
     };
     let convert = convert.unwrap_or(false);
@@ -330,7 +345,8 @@ pub fn download(app: AppHandle, paths: Vec<String>, folder: String) -> CmdResult
         // list everything first so progress can count bytes
         let mut files = Vec::new();
         for p in &paths {
-            let st = device::run(app, |c| c.stat(p))?.ok_or_else(|| CmdError::new("notFound", format!("{p} doesn't exist")))?;
+            let st = device::run(app, |c| c.stat(p))?
+                .ok_or_else(|| CmdError::new("notFound", format!("{p} doesn't exist")))?;
             let base = calcbridge_link::services::dirname(p);
             if st.is_dir {
                 files.push((st.clone(), base.clone()));
@@ -353,7 +369,8 @@ pub fn download(app: AppHandle, paths: Vec<String>, folder: String) -> CmdResult
                 continue;
             }
             let start = done_bytes;
-            let data = device::run(app, |c| c.read_file(&e.path, Some(&mut |d, _| ctx.progress(start + d, total, &e.path))))?;
+            let data =
+                device::run(app, |c| c.read_file(&e.path, Some(&mut |d, _| ctx.progress(start + d, total, &e.path))))?;
             if let Some(parent) = local.parent() {
                 std::fs::create_dir_all(parent)?;
             }
@@ -421,18 +438,21 @@ pub fn install_os(app: AppHandle, path: String) -> CmdResult<u64> {
     jobs::submit(&app, "Installing an OS", move |ctx| {
         let image = std::fs::read(&path)?;
         device::run(ctx.app(), |c| {
-            c.install_os(&image, Some(&mut |stage, d, t| {
-                let detail = match stage {
-                    OsStage::Upload => "Sending the OS image",
-                    OsStage::Install => "The handheld is installing it",
-                };
-                // Upload is the first 90%, the handheld's own install the rest.
-                let (done, total) = match stage {
-                    OsStage::Upload => (d * 90 / t.max(1), 100),
-                    OsStage::Install => (90 + d / 10, 100),
-                };
-                ctx.progress(done, total, detail);
-            }))
+            c.install_os(
+                &image,
+                Some(&mut |stage, d, t| {
+                    let detail = match stage {
+                        OsStage::Upload => "Sending the OS image",
+                        OsStage::Install => "The handheld is installing it",
+                    };
+                    // Upload is the first 90%, the handheld's own install the rest.
+                    let (done, total) = match stage {
+                        OsStage::Upload => (d * 90 / t.max(1), 100),
+                        OsStage::Install => (90 + d / 10, 100),
+                    };
+                    ctx.progress(done, total, detail);
+                }),
+            )
         })?;
         if !app_is_simulated(ctx.app()) {
             device::os_restarting(ctx.app());
@@ -569,7 +589,11 @@ pub async fn local_list(path: String, show_hidden: bool) -> CmdResult<Vec<LocalE
                 path: entry.path().to_string_lossy().into_owned(),
                 is_dir: meta.is_dir(),
                 size: if meta.is_dir() { 0 } else { meta.len() },
-                modified: meta.modified().ok().and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok()).map(|d| d.as_secs()),
+                modified: meta
+                    .modified()
+                    .ok()
+                    .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+                    .map(|d| d.as_secs()),
             });
         }
         Ok(out)

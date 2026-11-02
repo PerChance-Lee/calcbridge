@@ -60,7 +60,8 @@ fn latex_text(s: &str, out: &mut String) {
     while i < chars.len() {
         if let Some(w) = OPERATORS.iter().find(|w| {
             let wc: Vec<char> = w.chars().collect();
-            chars[i..].starts_with(&wc) && !(i + wc.len() < chars.len() && chars[i + wc.len()].is_alphabetic() && !matches!(**w, "fl" | "DP"))
+            chars[i..].starts_with(&wc)
+                && !(i + wc.len() < chars.len() && chars[i + wc.len()].is_alphabetic() && !matches!(**w, "fl" | "DP"))
         }) {
             out.push_str(&format!("\\operatorname{{{w}}}"));
             i += w.chars().count();
@@ -216,8 +217,12 @@ fn math_latex(el: roxmltree::Node, formats: &std::collections::HashMap<String, F
                 math_latex(sub_els[0], formats),
                 math_latex(sub_els[1], formats)
             )),
-            ("node", "0sqrt") if !sub_els.is_empty() => out.push_str(&format!("\\sqrt{{{}}}", math_latex(sub_els[0], formats))),
-            ("node", "0power") if !sub_els.is_empty() => out.push_str(&format!("^{{{}}}", math_latex(sub_els[0], formats))),
+            ("node", "0sqrt") if !sub_els.is_empty() => {
+                out.push_str(&format!("\\sqrt{{{}}}", math_latex(sub_els[0], formats)))
+            }
+            ("node", "0power") if !sub_els.is_empty() => {
+                out.push_str(&format!("^{{{}}}", math_latex(sub_els[0], formats)))
+            }
             ("node", "0el") => out.push_str(&math_latex(k, formats)),
             ("node", _) => {
                 // a template we don't draw: show its linear text
@@ -303,7 +308,9 @@ mod tests {
         let doc = TnsDocument::from_bytes(&blob).unwrap();
         let paras = parse_r2d(&doc.notes_trees()[0].2).unwrap();
         assert_eq!(paras.len(), 2);
-        assert!(matches!(&paras[0][0], Span::Text { text, style } if text == "Title" && style.bold && style.color.is_some()));
+        assert!(
+            matches!(&paras[0][0], Span::Text { text, style } if text == "Title" && style.bold && style.color.is_some())
+        );
         let math: Vec<String> = paras[1]
             .iter()
             .filter_map(|s| if let Span::Math { latex } = s { Some(latex.clone()) } else { None })

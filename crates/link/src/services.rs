@@ -346,8 +346,12 @@ pub fn list_dir(s: &mut Session, path: &str) -> Result<Vec<DirEntry>> {
         s.write(&req)?;
         let code = s.read()?;
         match code.get(1) {
-            Some(0x0A) => return Err(Error::remote(RemoteKind::NotFound, format!("{path} doesn't exist"), Some(0xFF0A))),
-            Some(0x0F) => return Err(Error::remote(RemoteKind::Refused, format!("{path} is not a folder"), Some(0xFF0F))),
+            Some(0x0A) => {
+                return Err(Error::remote(RemoteKind::NotFound, format!("{path} doesn't exist"), Some(0xFF0A)));
+            }
+            Some(0x0F) => {
+                return Err(Error::remote(RemoteKind::Refused, format!("{path} is not a folder"), Some(0xFF0F)));
+            }
             _ => {}
         }
         let mut items = Vec::new();
@@ -390,7 +394,11 @@ pub fn stat(s: &mut Session, path: &str) -> Result<Option<DirEntry>> {
     })
 }
 
-pub fn read_file(s: &mut Session, path: &str, mut progress: Option<&mut (dyn FnMut(u64, u64) + '_)>) -> Result<Vec<u8>> {
+pub fn read_file(
+    s: &mut Session,
+    path: &str,
+    mut progress: Option<&mut (dyn FnMut(u64, u64) + '_)>,
+) -> Result<Vec<u8>> {
     s.with_service(SID_FILES, |s| {
         let mut req = vec![0x07, 0x01];
         req.extend(padded(path));
@@ -429,7 +437,11 @@ pub fn write_file(
         let b = s.read()?;
         if b.first() != Some(&0x04) {
             let code = result_code(&b);
-            return Err(Error::remote(RemoteKind::Refused, format!("The calculator refused {path}: {}", why(code)), code));
+            return Err(Error::remote(
+                RemoteKind::Refused,
+                format!("The calculator refused {path}: {}", why(code)),
+                code,
+            ));
         }
         let mut sent = 0;
         for chunk in data.chunks(CHUNK) {
@@ -447,7 +459,7 @@ pub fn write_file(
             return Err(Error::remote(RemoteKind::Refused, format!("Writing {path} failed: {}", why(result)), result));
         }
         if data.is_empty() {
-            if let Some(p) = progress.as_deref_mut() {
+            if let Some(p) = progress {
                 p(0, 0);
             }
         }

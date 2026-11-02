@@ -43,7 +43,9 @@ fn hardware_end_to_end() {
         Calculator::open_usb(None, Options::default(), Some(&mut |a, n| println!("   probing {a}/{n}"))).expect("open")
     });
     println!("    device key {}", calc.device_key());
-    for leftover in calc.list_dir("/").unwrap().into_iter().filter(|e| e.is_dir && e.name.starts_with("calcbridge-selftest-")) {
+    for leftover in
+        calc.list_dir("/").unwrap().into_iter().filter(|e| e.is_dir && e.name.starts_with("calcbridge-selftest-"))
+    {
         println!("    removing {} left by an interrupted run", leftover.path);
         calc.delete(&leftover.path).unwrap();
     }
@@ -63,8 +65,15 @@ fn hardware_end_to_end() {
 
 fn run(calc: &Calculator, root: &str) {
     let info = step("info", || calc.info().unwrap());
-    println!("    {} \"{}\" OS {} battery {} free {}/{}", info.model(), info.name, info.os_version, info.battery,
-        info.flash_free, info.flash_total);
+    println!(
+        "    {} \"{}\" OS {} battery {} free {}/{}",
+        info.model(),
+        info.name,
+        info.os_version,
+        info.battery,
+        info.flash_free,
+        info.flash_total
+    );
     assert!(!info.name.is_empty() && info.os_version.matches('.').count() == 2);
     assert!(0 < info.flash_free && info.flash_free <= info.flash_total);
     assert_eq!((info.lcd_width, info.lcd_height), (320, 240));
@@ -116,7 +125,8 @@ fn run(calc: &Calculator, root: &str) {
         assert_eq!(calc.read_file(&format!("{root}/A2/B/f.tns"), None).unwrap(), [b'f'; 3000]);
         assert_eq!(calc.rename(&format!("{root}/A2/g.tns"), "h.tns").unwrap(), format!("{root}/A2/h.tns"));
         calc.move_to(&format!("{root}/A2/h.tns"), &format!("{root}/A/B/h.tns")).unwrap();
-        let mut names: Vec<String> = calc.list_dir(&format!("{root}/A/B")).unwrap().into_iter().map(|e| e.name).collect();
+        let mut names: Vec<String> =
+            calc.list_dir(&format!("{root}/A/B")).unwrap().into_iter().map(|e| e.name).collect();
         names.sort();
         assert_eq!(names, ["f.tns", "h.tns"]);
         calc.delete(&format!("{root}/A2")).unwrap();

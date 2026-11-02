@@ -1,10 +1,11 @@
-"""Draw the app icon (src/calcbridge/assets/icon.png, 1024 px). Run once; the PNG is committed."""
+"""Draw the app icon (assets/icon.png, 1024 px). Run once; the PNG is committed. Then regenerate the
+app icons with: cd app && npx tauri icon ../assets/icon.png -o src-tauri/icons"""
 import os
 
 from PIL import Image, ImageDraw
 
 S = 1024
-OUT = os.path.join(os.path.dirname(__file__), "..", "src", "calcbridge", "assets", "icon.png")
+OUT = os.path.join(os.path.dirname(__file__), "..", "assets", "icon.png")
 
 
 def lerp(a, b, t):

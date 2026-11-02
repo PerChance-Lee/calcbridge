@@ -380,7 +380,8 @@ impl State {
     }
 
     fn ack(&mut self, m: &Message) {
-        let ack = Message::new(m.service | nnse::ACK_FLAG, Vec::new()).route(nnse::ADDR_CALC, nnse::ADDR_ME).seq(m.seqno);
+        let ack =
+            Message::new(m.service | nnse::ACK_FLAG, Vec::new()).route(nnse::ADDR_CALC, nnse::ADDR_ME).seq(m.seqno);
         self.transmit(ack);
     }
 

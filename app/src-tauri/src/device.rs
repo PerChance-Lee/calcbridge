@@ -20,11 +20,20 @@ pub enum Status {
     Absent,
     /// One is plugged in but not connected.
     Present,
-    Connecting { detail: String },
-    Connected { info: DeviceInfo, simulated: bool },
+    Connecting {
+        detail: String,
+    },
+    Connected {
+        info: Box<DeviceInfo>,
+        simulated: bool,
+    },
     /// Waiting for the handheld to come back (it's restarting after an OS install).
-    Waiting { detail: String },
-    Failed { message: String },
+    Waiting {
+        detail: String,
+    },
+    Failed {
+        message: String,
+    },
 }
 
 /// Where an OS install's restart has got to.
@@ -168,7 +177,10 @@ pub fn connect(app: &AppHandle, simulated: bool, manual: bool) -> CmdResult<Devi
         } else {
             let progress_app = app.clone();
             let mut progress = move |done: usize, total: usize| {
-                set_status(&progress_app, Status::Connecting { detail: format!("Finding the connection ({done} of {total})…") });
+                set_status(
+                    &progress_app,
+                    Status::Connecting { detail: format!("Finding the connection ({done} of {total})…") },
+                );
             };
             Calculator::open_usb(None, Options::default(), Some(&mut progress))?
         };
@@ -186,7 +198,7 @@ pub fn connect(app: &AppHandle, simulated: bool, manual: bool) -> CmdResult<Devi
             );
             *dev.calc.write().unwrap_or_else(PoisonError::into_inner) = Some(Arc::new(calc));
             dev.simulated.store(simulated, Ordering::SeqCst);
-            set_status(app, Status::Connected { info: info.clone(), simulated });
+            set_status(app, Status::Connected { info: Box::new(info.clone()), simulated });
             Ok(info)
         }
         Err(e) => {
@@ -233,14 +245,20 @@ pub fn os_restarting(app: &AppHandle) {
     }
     dev.hold_off.store(false, Ordering::SeqCst);
     log::info!("the handheld is restarting with its new OS");
-    set_status(app, Status::Waiting { detail: "The handheld is installing its new OS and restarting. CalcBridge reconnects when it's back.".into() });
+    set_status(
+        app,
+        Status::Waiting {
+            detail: "The handheld is installing its new OS and restarting. CalcBridge reconnects when it's back."
+                .into(),
+        },
+    );
 }
 
 /// Refresh the device details shown in the sidebar.
 pub fn refresh_info(app: &AppHandle) -> CmdResult<DeviceInfo> {
     let info = run(app, |c| c.info())?;
     let simulated = app.state::<Device>().is_simulated();
-    set_status(app, Status::Connected { info: info.clone(), simulated });
+    set_status(app, Status::Connected { info: Box::new(info.clone()), simulated });
     Ok(info)
 }
 

@@ -313,12 +313,22 @@ export function CreateView() {
               ))}
             </div>
           ) : (
-            <div className="preview" style={{ alignItems: "stretch" }}>
-              <div className="callout info">
+            <div className="preview">
+              <div className="callout info" style={{ alignSelf: "stretch" }}>
                 {draft.kind === "python"
-                  ? "The document opens in the handheld's Python editor; run it with ctrl+R."
+                  ? "The document opens in the handheld's Python editor; run it with ctrl+R. Below: roughly what fits on its screen."
                   : "Lua scripts run as a page of their own. Use on.paint and friends from TI's Lua API."}
               </div>
+              {draft.kind === "python" && (
+                <div className="handheld-page py-preview">
+                  {content.split("\n").map((line, i) => (
+                    <div key={i} className={line.length > 42 ? "long" : ""}>
+                      {line.slice(0, 42) || " "}
+                      {line.length > 42 && <span className="more">…</span>}
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
           )}
           {(draft.kind === "notes" || draft.kind === "text") && (

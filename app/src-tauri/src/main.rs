@@ -33,7 +33,11 @@ fn main() {
         .setup(move |app| {
             let handle = app.handle().clone();
             applog::attach(handle.clone());
-            log::info!("CalcBridge {} started{}", env!("CARGO_PKG_VERSION"), if simulated { " with the simulator" } else { "" });
+            log::info!(
+                "CalcBridge {} started{}",
+                env!("CARGO_PKG_VERSION"),
+                if simulated { " with the simulator" } else { "" }
+            );
             jobs::start(handle.clone());
             device::start(handle, simulated);
             Ok(())

@@ -33,8 +33,8 @@ pub fn check_name(name: &str) -> Result<()> {
 }
 
 const WINDOWS_RESERVED: [&str; 22] = [
-    "CON", "PRN", "AUX", "NUL", "COM1", "COM2", "COM3", "COM4", "COM5", "COM6", "COM7", "COM8", "COM9", "LPT1",
-    "LPT2", "LPT3", "LPT4", "LPT5", "LPT6", "LPT7", "LPT8", "LPT9",
+    "CON", "PRN", "AUX", "NUL", "COM1", "COM2", "COM3", "COM4", "COM5", "COM6", "COM7", "COM8", "COM9", "LPT1", "LPT2",
+    "LPT3", "LPT4", "LPT5", "LPT6", "LPT7", "LPT8", "LPT9",
 ];
 
 /// A handheld name made safe for the PC's file system (Windows is the strictest).
@@ -103,6 +103,9 @@ fn collect_files(dir: &Path, out: &mut Vec<PathBuf>) -> Result<()> {
     }
     Ok(())
 }
+
+/// Progress for whole-handheld operations: (handheld path, item number, item count).
+pub type ItemProgress<'a, 'b> = Option<&'a mut (dyn FnMut(&str, usize, usize) + 'b)>;
 
 pub struct Options {
     /// Where to remember the sequence number between runs; `None` disables it.
@@ -338,7 +341,12 @@ impl Calculator {
 
     // ------------------------------------------------------- transfers
     /// Download a file or folder to a local path. Returns the bytes received.
-    pub fn download(&self, remote: &str, local: &Path, mut progress: Option<&mut (dyn FnMut(u64, u64) + '_)>) -> Result<u64> {
+    pub fn download(
+        &self,
+        remote: &str,
+        local: &Path,
+        mut progress: Option<&mut (dyn FnMut(u64, u64) + '_)>,
+    ) -> Result<u64> {
         let st = self.stat(remote)?.ok_or_else(|| not_found(remote))?;
         if !st.is_dir {
             let data = self.read_file(remote, progress.as_deref_mut())?;
@@ -409,7 +417,7 @@ impl Calculator {
     }
 
     /// Copy everything on the handheld into `local_dir`. Returns the number of files.
-    pub fn backup(&self, local_dir: &Path, mut progress: Option<&mut (dyn FnMut(&str, usize, usize) + '_)>) -> Result<usize> {
+    pub fn backup(&self, local_dir: &Path, mut progress: ItemProgress<'_, '_>) -> Result<usize> {
         let entries = self.walk("/")?;
         let files: Vec<&DirEntry> = entries.iter().filter(|e| !e.is_dir).collect();
         for e in entries.iter().filter(|e| e.is_dir) {
@@ -436,7 +444,7 @@ impl Calculator {
         local_dir: &Path,
         remote_folder: &str,
         overwrite: bool,
-        mut progress: Option<&mut (dyn FnMut(&str, usize, usize) + '_)>,
+        mut progress: ItemProgress<'_, '_>,
         mut skipped: Option<&mut Vec<PathBuf>>,
     ) -> Result<usize> {
         let mut all = Vec::new();
@@ -460,7 +468,8 @@ impl Calculator {
                 .parent()
                 .map(|p| p.components().map(|c| c.as_os_str().to_string_lossy().into_owned()).collect())
                 .unwrap_or_default();
-            let folder = if parts.is_empty() { remote_folder.to_owned() } else { join(remote_folder, &parts.join("/")) };
+            let folder =
+                if parts.is_empty() { remote_folder.to_owned() } else { join(remote_folder, &parts.join("/")) };
             if folder != "/" && !self.exists(&folder)? {
                 self.mkdir(&folder, true)?;
             }
@@ -481,7 +490,11 @@ impl Calculator {
         Ok(written)
     }
 
-    pub fn install_os(&self, image: &[u8], mut progress: Option<&mut (dyn FnMut(OsStage, u64, u64) + '_)>) -> Result<()> {
+    pub fn install_os(
+        &self,
+        image: &[u8],
+        mut progress: Option<&mut (dyn FnMut(OsStage, u64, u64) + '_)>,
+    ) -> Result<()> {
         if image.len() < 1024 {
             return Err(Error::Invalid("That file is too small to be an OS image".into()));
         }

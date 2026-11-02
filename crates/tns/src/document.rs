@@ -94,12 +94,8 @@ pub fn valid_python_name(name: &str) -> bool {
 
 /// A module name the handheld accepts, derived from any document name.
 pub fn safe_identifier(name: &str) -> String {
-    let s: String = name
-        .trim()
-        .to_lowercase()
-        .chars()
-        .map(|c| if c.is_ascii_alphanumeric() { c } else { '_' })
-        .collect();
+    let s: String =
+        name.trim().to_lowercase().chars().map(|c| if c.is_ascii_alphanumeric() { c } else { '_' }).collect();
     let s = s.trim_matches('_');
     let s = if s.is_empty() { "program" } else { s };
     if s.starts_with(|c: char| c.is_ascii_digit()) { format!("p_{s}") } else { s.to_string() }
@@ -261,8 +257,12 @@ impl TnsDocument {
         for (name, _) in self.python_files() {
             lines.push(format!("  Python file: {name}"));
         }
-        let others: Vec<_> =
-            self.entries.iter().filter(|e| !e.name.ends_with(".xml") && !e.name.ends_with(".py")).map(|e| e.name.as_str()).collect();
+        let others: Vec<_> = self
+            .entries
+            .iter()
+            .filter(|e| !e.name.ends_with(".xml") && !e.name.ends_with(".py"))
+            .map(|e| e.name.as_str())
+            .collect();
         if !others.is_empty() {
             lines.push(format!("  Other files: {}", others.join(", ")));
         }
@@ -307,7 +307,8 @@ mod tests {
 
     #[test]
     fn text_document_is_literal() {
-        let doc = TnsDocument::from_bytes(&build_text("line with $ and **stars**\nsecond", Some("T")).unwrap()).unwrap();
+        let doc =
+            TnsDocument::from_bytes(&build_text("line with $ and **stars**\nsecond", Some("T")).unwrap()).unwrap();
         let tree = &doc.notes_trees()[0].2;
         assert!(tree.contains(">$ </leaf>") && tree.contains(">**stars**</leaf>") && !tree.contains("0el"));
     }

@@ -44,7 +44,12 @@ pub struct Jobs {
 
 impl Default for Jobs {
     fn default() -> Self {
-        Jobs { tx: Mutex::new(None), next: AtomicU64::new(1), cancelled: Mutex::new(HashSet::new()), running: Mutex::new(None) }
+        Jobs {
+            tx: Mutex::new(None),
+            next: AtomicU64::new(1),
+            cancelled: Mutex::new(HashSet::new()),
+            running: Mutex::new(None),
+        }
     }
 }
 
@@ -142,7 +147,11 @@ pub fn start(app: AppHandle) {
 }
 
 /// Queue a job; returns its id at once.
-pub fn submit(app: &AppHandle, title: impl Into<String>, work: impl FnOnce(&JobCtx) -> CmdResult<String> + Send + 'static) -> CmdResult<u64> {
+pub fn submit(
+    app: &AppHandle,
+    title: impl Into<String>,
+    work: impl FnOnce(&JobCtx) -> CmdResult<String> + Send + 'static,
+) -> CmdResult<u64> {
     let jobs = app.state::<Jobs>();
     let id = jobs.next.fetch_add(1, Ordering::SeqCst);
     let title = title.into();

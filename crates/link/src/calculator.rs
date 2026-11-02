@@ -285,6 +285,9 @@ impl Calculator {
 
     /// Delete a file, or a folder and everything in it.
     pub fn delete(&self, path: &str) -> Result<()> {
+        if path.trim_matches('/').is_empty() {
+            return Err(Error::Invalid("My Documents itself can't be deleted".into()));
+        }
         let st = self.stat(path)?.ok_or_else(|| not_found(path))?;
         if st.is_dir {
             for e in self.list_dir(path)? {

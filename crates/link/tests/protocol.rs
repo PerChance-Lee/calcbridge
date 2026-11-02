@@ -541,3 +541,13 @@ fn reads_the_python_state_file() {
     assert_eq!(v["default"], 4252); // other devices' numbers are kept
     assert_eq!(v["sim"], 41);
 }
+
+// deleting "/" would empty the whole handheld
+#[test]
+fn the_top_folder_cannot_be_deleted() {
+    let (_sim, _dir, calc) = setup();
+    for root in ["/", "", "//"] {
+        assert!(matches!(calc.delete(root), Err(Error::Invalid(_))), "{root:?}");
+    }
+    assert!(calc.exists("/Examples").unwrap());
+}

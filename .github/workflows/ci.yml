@@ -86,8 +86,11 @@ jobs:
         run: |
           dir=target/${{ matrix.target }}/release
           ls "$dir"
-          app="$dir/calcbridge-app"; [ -f "$app.exe" ] && app="$app.exe"
-          [ -f "$dir/CalcBridge.exe" ] && app="$dir/CalcBridge.exe"
+          app=""
+          for name in CalcBridge.exe CalcBridge calcbridge-app.exe calcbridge-app; do
+            [ -f "$dir/$name" ] && { app="$dir/$name"; break; }
+          done
+          [ -n "$app" ] || { echo "no app binary in $dir"; exit 1; }
           "$app" --self-test || { cat selftest.txt; exit 1; }
           cat selftest.txt
           cli="$dir/calcbridge"; [ -f "$cli.exe" ] && cli="$cli.exe"

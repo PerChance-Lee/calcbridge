@@ -1,0 +1,49 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "CalcBridge",
+  "mainBinaryName": "CalcBridge",
+  "version": "2.0.0",
+  "identifier": "io.github.perchance-lee.calcbridge",
+  "build": {
+    "beforeDevCommand": "npm run dev",
+    "devUrl": "http://localhost:5173",
+    "beforeBuildCommand": "npm run build",
+    "frontendDist": "../dist"
+  },
+  "app": {
+    "windows": [
+      {
+        "label": "main",
+        "title": "CalcBridge",
+        "width": 1240,
+        "height": 800,
+        "minWidth": 940,
+        "minHeight": 620,
+        "dragDropEnabled": true,
+        "visible": true
+      }
+    ],
+    "security": {
+      "csp": "default-src 'self'; img-src 'self' data: blob:; style-src 'self' 'unsafe-inline'; font-src 'self' data:; script-src 'self'; connect-src ipc: http://ipc.localhost"
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": ["nsis", "msi", "app", "dmg", "appimage", "deb"],
+    "icon": ["icons/32x32.png", "icons/128x128.png", "icons/128x128@2x.png", "icons/icon.icns", "icons/icon.ico"],
+    "category": "Education",
+    "shortDescription": "Connect a TI-Nspire CX II: files, live screen, keypad, documents",
+    "longDescription": "CalcBridge is a free, open-source desktop link for the TI-Nspire CX II: transfer files and folders, watch and control the handheld's screen, back up and restore, and create and view .tns documents with real 2D math.",
+    "copyright": "CalcBridge contributors, GPL-3.0-or-later",
+    "license": "GPL-3.0-or-later",
+    "licenseFile": "../../LICENSE",
+    "publisher": "CalcBridge",
+    "homepage": "https://github.com/PerChance-Lee/calcbridge",
+    "windows": {
+      "nsis": { "installMode": "currentUser" },
+      "webviewInstallMode": { "type": "downloadBootstrapper" }
+    },
+    "macOS": { "minimumSystemVersion": "11.0" },
+    "linux": { "deb": { "files": { "/usr/lib/udev/rules.d/60-calcbridge.rules": "../../packaging/linux/60-calcbridge.rules" } } }
+  }
+}

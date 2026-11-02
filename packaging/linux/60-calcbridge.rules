@@ -1,0 +1,2 @@
+# TI-Nspire CX II (CalcBridge): let the logged-in user talk to the handheld without root.
+SUBSYSTEM=="usb", ATTR{idVendor}=="0451", ATTR{idProduct}=="e022", MODE="0660", TAG+="uaccess"

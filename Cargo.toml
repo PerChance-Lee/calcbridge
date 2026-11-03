@@ -1,0 +1,15 @@
+[workspace]
+resolver = "3"
+members = ["crates/tns", "crates/link", "crates/cli", "app/src-tauri"]
+
+[workspace.package]
+version = "2.0.0"
+edition = "2024"
+license = "GPL-3.0-or-later"
+repository = "https://github.com/PerChance-Lee/calcbridge"
+rust-version = "1.85"
+
+[profile.release]
+lto = "thin"
+codegen-units = 1
+strip = true

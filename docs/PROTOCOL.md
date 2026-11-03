@@ -1,13 +1,21 @@
 # TI-Nspire CX II USB protocol notes
 
 What CalcBridge relies on, including behaviour observed on a real CX II running OS 5.4 that isn't
-written down elsewhere. Sources: libnspire, tilibs, hackspire.org, Luna, TnsTools, and testing.
+written down elsewhere. Sources: libnspire, tilibs, hackspire.org, Luna, TnsTools, and testing. The
+implementation is in `crates/link` (USB) and `crates/tns` (documents); the simulator in
+`crates/link/src/sim.rs` reproduces every observed quirk below.
 
 ## USB
 - VID `0x0451`, PID `0xE022` (CX II family). One vendor-specific interface, bulk endpoints `0x81` (in)
-  and `0x01` (out).
+  and `0x01` (out). High speed, 512-byte packets; no serial number string.
 - **Windows** binds WinUSB automatically (MS OS descriptors) — no driver install. **macOS** needs no
-  driver. Only one program can claim the interface at a time (close TI's software first).
+  driver. **Linux** needs a udev rule for a normal user (`packaging/linux/60-calcbridge.rules`). Only one
+  program can claim the interface at a time (close TI's software first).
+- **Observed:** each USB transfer carries one NNSE message, but a 1472-byte message (a full data packet,
+  23 × 64 bytes) arrives as a **1473-byte transfer** with one pad byte, presumably so the transfer still
+  ends in a short packet on a full-speed link. Cut messages by transfer and drop bytes past the header's
+  length; reading the endpoint as a byte stream glues the pad byte onto the next message, which then
+  fails its checksum (the calculator resends it after ~1.2 s, so everything still works, very slowly).
 
 ## NNSE link layer (CX II only)
 12-byte big-endian header: `misc, service, src, dest, unknown, reqAck, length(2), seqno(2), checksum(2)`.

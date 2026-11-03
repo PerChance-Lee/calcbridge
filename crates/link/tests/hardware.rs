@@ -3,7 +3,8 @@
 //!
 //! Everything happens inside a scratch folder (/calcbridge-selftest-<time>) that is removed
 //! afterwards; nothing else on the handheld is written to. OS install is never exercised here, and
-//! no keys are pressed.
+//! no keys are pressed, so the handheld is left showing a "Document Deleted" notice for the last
+//! scratch document it received: press enter on it.
 
 #![cfg(feature = "usb")]
 
@@ -58,6 +59,7 @@ fn hardware_end_to_end() {
     }
     assert!(!calc.exists(&root).unwrap(), "scratch folder left behind");
     calc.close();
+    println!("note: the handheld now shows \"Document Deleted\" for a scratch document; press enter on it");
     if let Err(panic) = result {
         std::panic::resume_unwind(panic);
     }
@@ -182,8 +184,7 @@ fn run(calc: &Calculator, root: &str) {
         assert_eq!(std::fs::read(&local).unwrap(), calc.read_file(&sample.path, None).unwrap());
     });
 
-    // Restore our own files, not the user's: copies of real documents (MyLib libraries especially)
-    // make the handheld show a "Document Deleted" notice when the scratch folder is removed.
+    // Restore our own files, not copies of the user's documents.
     step("restore a backup folder into the scratch area", || {
         let src = tmp.path().join("restore-src");
         std::fs::create_dir_all(src.join("inner")).unwrap();

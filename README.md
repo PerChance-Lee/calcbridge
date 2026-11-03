@@ -148,7 +148,8 @@ cargo run -p calcbridge-cli -- --sim ls -r /
 ```
 
 With a CX II plugged in, `CALCBRIDGE_HARDWARE=1 cargo test -p calcbridge-link --test hardware -- --nocapture`
-runs the end-to-end tests on it, inside a scratch folder that is removed afterwards.
+runs the end-to-end tests on it, inside a scratch folder that is removed afterwards. It presses no
+keys, so the handheld is left showing a "Document Deleted" notice for a scratch file; press enter.
 `CalcBridge --self-test` checks a packaged build without opening a window.
 
 ## License

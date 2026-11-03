@@ -16,6 +16,8 @@ A rewrite in Rust: the same features as 1.x, plus several new ones, in a much sm
 - Files: filter boxes, a typed path, Properties, rename keeps `.tns`, *Replace / Skip* for clashes.
 - Dark mode; keyboard shortcuts listed in Settings; Log with Copy.
 - Command line: `calcbridge devices`, `calcbridge keys`, `--trace`.
+- Backup carries on past a file the handheld won't send and names it at the end (1.x stopped at the
+  first one).
 
 **Fixed (1.x bugs that don't carry over)**
 - The keypad's *i* key typed the letter i instead of the imaginary unit.
@@ -24,6 +26,10 @@ A rewrite in Rust: the same features as 1.x, plus several new ones, in a much sm
 - Closing the window during a transfer froze it; now it asks first.
 - A failed paste after Cut lost the clipboard; moving now checks for clashes before anything moves.
 - `/PyLib` is created when installing a module, and Create makes a missing target folder.
+- Lua scripts with characters outside ASCII (π, é, ≤, …) made documents the handheld rejected as
+  badly formatted.
+- A reply left over from an interrupted run could be taken as an answer by the next one, giving
+  garbled listings or "short reply" errors.
 
 **Changed**
 - The keypad's *ctrl* and *shift* keys are replaced by the combined keys the protocol supports

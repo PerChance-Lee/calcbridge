@@ -52,6 +52,8 @@ pub struct Device {
     sim: Mutex<Option<Sim>>,
     simulated: AtomicBool,
     auto_connect: AtomicBool,
+    /// Started with `--sim`: never connect to a real calculator unless asked to.
+    sim_only: AtomicBool,
     /// Don't auto-connect until the calculator is unplugged (after a Disconnect, or a failed try).
     hold_off: AtomicBool,
     restart: Mutex<Restart>,
@@ -73,6 +75,7 @@ impl Default for Device {
             sim: Mutex::new(None),
             simulated: AtomicBool::new(false),
             auto_connect: AtomicBool::new(true),
+            sim_only: AtomicBool::new(false),
             hold_off: AtomicBool::new(false),
             restart: Mutex::new(Restart::None),
             switching: Mutex::new(()),
@@ -319,7 +322,9 @@ fn reconsider(app: &AppHandle) {
             }
         }
         (_, None) => {
-            let auto = dev.auto_connect.load(Ordering::SeqCst) && !dev.hold_off.load(Ordering::SeqCst);
+            let auto = dev.auto_connect.load(Ordering::SeqCst)
+                && !dev.hold_off.load(Ordering::SeqCst)
+                && !dev.sim_only.load(Ordering::SeqCst);
             if present && auto {
                 let _ = connect(app, false, false);
             } else if !matches!(dev.status(), Status::Failed { .. }) || !present {
@@ -334,6 +339,7 @@ pub fn start(app: AppHandle, simulated: bool) {
     let (tx, rx) = mpsc::channel::<()>();
     *lock(&app.state::<Device>().kick) = Some(tx.clone());
     if simulated {
+        app.state::<Device>().sim_only.store(true, Ordering::SeqCst);
         let sim_app = app.clone();
         std::thread::spawn(move || {
             let _ = connect(&sim_app, true, true);

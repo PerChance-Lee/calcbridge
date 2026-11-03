@@ -367,6 +367,17 @@ fn run_on(c: &Calculator, cmd: Cmd) -> Res {
 }
 
 fn build(source: &Path, output: Option<&Path>, kind: Kind) -> Res {
+    let out = output.map_or_else(|| source.with_extension("tns"), Path::to_path_buf);
+    let same = |a: &Path, b: &Path| {
+        a == b || std::fs::canonicalize(a).ok().zip(std::fs::canonicalize(b).ok()).is_some_and(|(x, y)| x == y)
+    };
+    if same(source, &out) {
+        return Err(format!(
+            "{} is already a .tns; building it would overwrite it (use -o to write somewhere else)",
+            source.display()
+        )
+        .into());
+    }
     let src = textio::read_text(source)?;
     let ext = source.extension().map(|e| e.to_string_lossy().to_lowercase()).unwrap_or_default();
     let kind = match kind {
@@ -387,7 +398,6 @@ fn build(source: &Path, output: Option<&Path>, kind: Kind) -> Res {
         Kind::Lua => build_lua(&src)?,
         Kind::Text | Kind::Auto => build_text(&src, None)?,
     };
-    let out = output.map_or_else(|| source.with_extension("tns"), Path::to_path_buf);
     std::fs::write(&out, data)?;
     println!("wrote {}", out.display());
     Ok(())
@@ -445,6 +455,16 @@ mod tests {
         view(&doc, Some(&dir.path().join("out"))).unwrap();
         assert!(!dir.path().join("escape.py").exists());
         assert!(dir.path().join("out").join("ok.py").exists() && dir.path().join("out").join("escape.py").exists());
+    }
+
+    #[test]
+    fn build_never_overwrites_its_source() {
+        let dir = tempfile::tempdir().unwrap();
+        let doc = dir.path().join("doc.tns");
+        std::fs::write(&doc, b"original").unwrap();
+        assert!(build(&doc, None, Kind::Auto).is_err());
+        assert!(build(&doc, Some(&doc), Kind::Auto).is_err());
+        assert_eq!(std::fs::read(&doc).unwrap(), b"original");
     }
 
     #[test]

@@ -79,14 +79,20 @@ export function FilesView() {
     });
   }, []);
 
+  const localRequest = useRef(0);
+  const remoteRequest = useRef(0);
+
   const loadLocal = useCallback(
     async (path: string | null = localPath) => {
       if (!path) return;
+      const ticket = ++localRequest.current;
       try {
         const entries = await api.localList(path, settings.showHidden);
+        if (ticket !== localRequest.current) return; // a newer folder was asked for meanwhile
         setLocalRows(entries.map((e) => ({ key: e.path, name: e.name, isDir: e.isDir, size: e.size, modified: e.modified, kind: kindOf(e.name, e.isDir) })));
         setLocalError(null);
       } catch (e) {
+        if (ticket !== localRequest.current) return;
         setLocalRows([]);
         setLocalError(errorText(e));
       }
@@ -103,12 +109,17 @@ export function FilesView() {
   const loadRemote = useCallback(
     async (path: string = remotePath) => {
       if (!connected) return;
+      const ticket = ++remoteRequest.current;
       setLoadingRemote(true);
       try {
         const entries = await api.listDir(path);
+        // A listing that waited behind a transfer can finish after a newer one: showing it under the
+        // newer folder's breadcrumb would make Delete and Rename act on the wrong folder's files.
+        if (ticket !== remoteRequest.current) return;
         setRemoteRows(entries.map((e) => ({ key: e.path, name: e.name, isDir: e.is_dir, size: e.size, modified: null, kind: kindOf(e.name, e.is_dir) })));
         setRemoteError(null);
       } catch (e) {
+        if (ticket !== remoteRequest.current) return;
         if (errorKind(e) === "notFound" && path !== "/") {
           setRemotePath("/"); // the folder went away (deleted on the handheld, or a different calculator)
           return;
@@ -116,7 +127,7 @@ export function FilesView() {
         setRemoteRows([]);
         setRemoteError(errorText(e));
       } finally {
-        setLoadingRemote(false);
+        if (ticket === remoteRequest.current) setLoadingRemote(false);
       }
     },
     [connected, remotePath],
@@ -229,8 +240,10 @@ export function FilesView() {
   }
 
   // --------------------------------------------------------- handheld actions
-  const remoteSelected = () => remoteRows.filter((r) => remoteSel.has(r.key));
-  const localSelected = () => localRows.filter((r) => localSel.has(r.key));
+  // what the filter hides isn't acted on, even if it was selected before the filter was typed
+  const visible = (r: Row, filter: string) => !filter.trim() || r.name.toLowerCase().includes(filter.trim().toLowerCase());
+  const remoteSelected = () => remoteRows.filter((r) => remoteSel.has(r.key) && visible(r, remoteFilter));
+  const localSelected = () => localRows.filter((r) => localSel.has(r.key) && visible(r, localFilter));
 
   async function newRemoteFolder() {
     const name = await app.prompt("New folder on the handheld", "New folder", { label: "Name", validate: checkHandheldName, ok: "Create" });
@@ -629,7 +642,7 @@ export function FilesView() {
             <button
               className="btn small primary"
               disabled={!connected || localSel.size === 0}
-              onClick={() => send([...localSel], remotePath)}
+              onClick={() => send(localSelected().map((r) => r.key), remotePath)}
               title="Send the selection to the open handheld folder"
             >
               Send <IconSend />
@@ -702,7 +715,7 @@ export function FilesView() {
             <button className="btn small icon ghost" title="Refresh (F5)" onClick={() => loadRemote()} disabled={!connected}>
               <IconRefresh />
             </button>
-            <button className="btn small primary" disabled={!connected || remoteSel.size === 0 || !localPath} onClick={() => receive([...remoteSel], localPath)} title="Copy the selection into the open folder on this computer">
+            <button className="btn small primary" disabled={!connected || remoteSel.size === 0 || !localPath} onClick={() => receive(remoteSelected().map((r) => r.key), localPath)} title="Copy the selection into the open folder on this computer">
               <IconReceive /> Receive
             </button>
           </div>

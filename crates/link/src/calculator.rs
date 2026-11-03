@@ -515,18 +515,14 @@ impl Calculator {
         Ok(written)
     }
 
-    pub fn install_os(
-        &self,
-        image: &[u8],
-        mut progress: Option<&mut (dyn FnMut(OsStage, u64, u64) + '_)>,
-    ) -> Result<()> {
+    pub fn install_os(&self, image: &[u8], progress: Option<&mut (dyn FnMut(OsStage, u64, u64) + '_)>) -> Result<()> {
         if image.len() < 1024 {
             return Err(Error::Invalid("That file is too small to be an OS image".into()));
         }
         // Never retried: a reset partway may mean the handheld already took the image and restarted,
         // and sending a whole OS a second time is not a harmless retry.
         let mut s = self.session();
-        match services::install_os(&mut s, image, progress.as_deref_mut()) {
+        match services::install_os(&mut s, image, progress) {
             Err(Error::LinkReset) => {
                 // reopen so the connection is usable again, but report what happened
                 let _ = s.open(None);

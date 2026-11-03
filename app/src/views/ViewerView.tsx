@@ -2,7 +2,7 @@
 // Lua code, and what's inside.
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { open, save } from "@tauri-apps/plugin-dialog";
-import { api, baseName, errorText, formatSize, type DocView } from "../api";
+import { api, baseName, errorText, formatSize, joinLocal, type DocView } from "../api";
 import { Paragraphs } from "../components/Math";
 import { IconBook, IconCreate, IconOpen, IconSave, IconSend } from "../icons";
 import { useApp } from "../store";
@@ -123,7 +123,12 @@ export function ViewerView() {
   async function receiveCopy() {
     if (!source || source.from !== "handheld") return;
     const folder = await open({ directory: true, title: "Save a copy into…", defaultPath: settings.localFolder ?? undefined });
-    if (typeof folder === "string") api.download([source.path], folder).catch((e) => app.toast("bad", "Couldn't receive", errorText(e)));
+    if (typeof folder !== "string") return;
+    const places = await api.localPlaces();
+    const target = joinLocal(folder, await api.localNameFor(baseName(source.path)), places.separator);
+    const [taken] = await api.localExists([target]);
+    if (taken && !(await app.confirm(`Replace “${baseName(target)}”?`, <p>It's already in that folder on this computer.</p>, "Replace", true))) return;
+    api.download([source.path], folder).catch((e) => app.toast("bad", "Couldn't receive", errorText(e)));
   }
 
   const notesFor = useMemo(() => {

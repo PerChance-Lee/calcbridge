@@ -48,6 +48,19 @@ function today(): string {
   return `${p(d.getMonth() + 1)}-${p(d.getDate())}-${d.getFullYear()}`;
 }
 
+// Captures outlive the Screen view (it's unmounted when you switch tabs) for the whole session.
+let keptCaptures: Capture[] = [];
+let nextCapture = 1;
+
+/** "name.png", or "name (2).png" and so on if that's taken in the folder. */
+async function freeName(folder: string, name: string, sep: string): Promise<string> {
+  for (let n = 1; ; n++) {
+    const candidate = joinLocal(folder, n === 1 ? `${name}.png` : `${name} (${n}).png`, sep);
+    const [taken] = await api.localExists([candidate]);
+    if (!taken) return candidate;
+  }
+}
+
 export async function copyImage(canvas: HTMLCanvasElement, toast: ReturnType<typeof useApp>["toast"]) {
   try {
     const blob = await new Promise<Blob | null>((r) => canvas.toBlob(r, "image/png"));
@@ -73,8 +86,9 @@ export function ScreenView() {
   const [fps, setFps] = useState(0);
   const [zoom, setZoom] = useState(0);
   const [border, setBorder] = useState(false);
-  const [captures, setCaptures] = useState<Capture[]>([]);
-  const counter = useRef(1);
+  const [captures, setCapturesState] = useState<Capture[]>(keptCaptures);
+  const setCaptures = (update: (all: Capture[]) => Capture[]) =>
+    setCapturesState((all) => (keptCaptures = update(all)));
   const [box, fit] = useFitScale<HTMLDivElement>(320, 240, 44, 4);
   const scale = zoom === 0 ? fit : zoom;
   const outScale = zoom === 0 ? 1 : zoom;
@@ -85,7 +99,7 @@ export function ScreenView() {
     const c = frame();
     if (!c || !connected) return;
     const raw = snapshot(c);
-    const name = `${today()} Image ${String(counter.current++).padStart(3, "0")}`;
+    const name = `${today()} Image ${String(nextCapture++).padStart(3, "0")}`;
     setCaptures((all) => [...all, { id: Date.now(), name, canvas: raw, thumb: raw.toDataURL("image/png") }]);
   }
 
@@ -114,7 +128,7 @@ export function ScreenView() {
     let n = 0;
     for (const cap of captures) {
       try {
-        await writeImage(render(cap.canvas, outScale, border), joinLocal(folder, `${cap.name}.png`, places.separator));
+        await writeImage(render(cap.canvas, outScale, border), await freeName(folder, cap.name, places.separator));
         n++;
       } catch (e) {
         app.toast("bad", `Couldn't save ${cap.name}`, errorText(e));
@@ -179,7 +193,7 @@ export function ScreenView() {
             <button className="btn small" onClick={saveAll}>
               <IconSave /> Save all…
             </button>
-            <button className="btn small ghost" onClick={() => setCaptures([])}>
+            <button className="btn small ghost" onClick={() => setCaptures(() => [])}>
               <IconTrash /> Clear
             </button>
           </div>

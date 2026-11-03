@@ -59,6 +59,10 @@ pub struct Device {
     switching: Mutex<()>,
     /// The last screenshot shown, for "Save".
     pub last_shot: Mutex<Option<Screenshot>>,
+    /// Asks the device watcher to look at USB again.
+    kick: Mutex<Option<mpsc::Sender<()>>>,
+    /// The window has said whether to connect automatically.
+    settings_known: AtomicBool,
 }
 
 impl Default for Device {
@@ -73,6 +77,8 @@ impl Default for Device {
             restart: Mutex::new(Restart::None),
             switching: Mutex::new(()),
             last_shot: Mutex::new(None),
+            kick: Mutex::new(None),
+            settings_known: AtomicBool::new(false),
         }
     }
 }
@@ -94,8 +100,15 @@ impl Device {
         self.simulated.load(Ordering::SeqCst)
     }
 
+    /// The window's "connect automatically" setting. The first time it arrives, look at what's
+    /// plugged in (startup waits for it, so a "no" is respected from the start).
     pub fn set_auto_connect(&self, on: bool) {
         self.auto_connect.store(on, Ordering::SeqCst);
+        if !self.settings_known.swap(true, Ordering::SeqCst) {
+            if let Some(kick) = lock(&self.kick).as_ref() {
+                let _ = kick.send(());
+            }
+        }
     }
 }
 
@@ -114,12 +127,25 @@ pub fn calc(app: &AppHandle) -> CmdResult<Arc<Calculator>> {
     app.state::<Device>().current().ok_or_else(CmdError::no_device)
 }
 
-/// Run `f` on the calculator. If the connection turns out to be dead, forget it and say so.
+/// Whether `calc` is still the open connection.
+pub fn is_current(app: &AppHandle, calc: &Arc<Calculator>) -> bool {
+    app.state::<Device>().current().is_some_and(|c| Arc::ptr_eq(&c, calc))
+}
+
+/// Run `f` on the open calculator. If the connection turns out to be dead, forget it and say so.
 pub fn run<T>(app: &AppHandle, f: impl FnOnce(&Calculator) -> calcbridge_link::Result<T>) -> CmdResult<T> {
-    let calc = calc(app)?;
-    f(&calc).map_err(|e| {
+    run_on(app, &calc(app)?, f)
+}
+
+/// Run `f` on a particular connection (a job's own).
+pub fn run_on<T>(
+    app: &AppHandle,
+    calc: &Arc<Calculator>,
+    f: impl FnOnce(&Calculator) -> calcbridge_link::Result<T>,
+) -> CmdResult<T> {
+    f(calc).map_err(|e| {
         if e.is_disconnect() {
-            lost(app, &calc, &e.to_string());
+            lost(app, calc, &e.to_string());
         }
         e.into()
     })
@@ -173,6 +199,9 @@ pub fn connect(app: &AppHandle, simulated: bool, manual: bool) -> CmdResult<Devi
             let sim = lock(&dev.sim)
                 .get_or_insert_with(|| Sim::new(SimConfig { idle_drop: None, ..SimConfig::default() }))
                 .clone();
+            // Like plugging it in again: a fresh handshake, so nothing has to be searched for (the
+            // simulator keeps its files between connections, but no sequence number is saved for it).
+            sim.replug();
             Calculator::open(Box::new(sim.transport("sim")), Options { state_file: None, ..Options::default() }, None)?
         } else {
             let progress_app = app.clone();
@@ -272,7 +301,10 @@ fn reconsider(app: &AppHandle) {
     {
         let mut restart = lock(&dev.restart);
         match (*restart, present) {
-            (Restart::Leaving, false) => *restart = Restart::Gone,
+            (Restart::Leaving, false) => {
+                *restart = Restart::Gone; // keep showing "restarting" until it's back
+                return;
+            }
             (Restart::Leaving, true) => return, // still rebooting
             (Restart::Gone, false) => return,
             (Restart::Gone, true) => *restart = Restart::None,
@@ -300,13 +332,23 @@ fn reconsider(app: &AppHandle) {
 /// Watch USB for calculators coming and going, and look once at startup (or start the simulator).
 pub fn start(app: AppHandle, simulated: bool) {
     let (tx, rx) = mpsc::channel::<()>();
+    *lock(&app.state::<Device>().kick) = Some(tx.clone());
     if simulated {
         let sim_app = app.clone();
         std::thread::spawn(move || {
             let _ = connect(&sim_app, true, true);
         });
     } else {
-        let _ = tx.send(());
+        // The first look waits for the window to say whether to connect automatically (or a few
+        // seconds, if it never does).
+        let fallback = tx.clone();
+        let fallback_app = app.clone();
+        std::thread::spawn(move || {
+            std::thread::sleep(Duration::from_secs(3));
+            if !fallback_app.state::<Device>().settings_known.swap(true, Ordering::SeqCst) {
+                let _ = fallback.send(());
+            }
+        });
     }
     let watcher = tx.clone();
     if let Err(e) = usb::watch(move || {

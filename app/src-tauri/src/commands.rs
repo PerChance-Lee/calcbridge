@@ -112,7 +112,7 @@ pub fn delete(app: AppHandle, paths: Vec<String>) -> CmdResult<u64> {
     jobs::submit(&app, title, move |ctx| {
         for (i, p) in paths.iter().enumerate() {
             ctx.progress(i as u64, paths.len() as u64, p);
-            device::run(ctx.app(), |c| {
+            ctx.run(|c| {
                 c.check_cancel()?;
                 c.delete(p)
             })?;
@@ -143,18 +143,17 @@ fn copy_name(c: &Calculator, folder: &str, name: &str, is_dir: bool) -> calcbrid
 pub fn copy_or_move(app: AppHandle, paths: Vec<String>, folder: String, keep_original: bool) -> CmdResult<u64> {
     let verb = if keep_original { "Copying" } else { "Moving" };
     jobs::submit(&app, format!("{verb} {} to {folder}", plural(paths.len(), "item")), move |ctx| {
-        let app = ctx.app();
         if !keep_original {
             for p in &paths {
                 let dst = join(&folder, basename(p));
-                if dst != *p && device::run(app, |c| c.exists(&dst))? {
+                if dst != *p && ctx.run(|c| c.exists(&dst))? {
                     return Err(CmdError::new("exists", format!("{} is already in {folder}", basename(p))));
                 }
             }
         }
         for (i, p) in paths.iter().enumerate() {
             ctx.progress(i as u64, paths.len() as u64, p);
-            device::run(app, |c| {
+            ctx.run(|c| {
                 c.check_cancel()?;
                 let name = basename(p);
                 let dst = join(&folder, name);
@@ -185,7 +184,7 @@ pub enum Existing {
 /// A file the handheld won't take as it is, but CalcBridge can turn into a document.
 fn convertible(name: &str) -> Option<&'static str> {
     let lower = name.to_lowercase();
-    [(".py", "python"), (".lua", "lua"), (".txt", "text"), (".md", "notes")]
+    [(".py", "python"), (".lua", "lua"), (".txt", "text"), (".md", "notes"), (".notes", "notes")]
         .into_iter()
         .find(|(ext, _)| lower.ends_with(ext))
         .map(|(_, kind)| kind)
@@ -283,18 +282,30 @@ fn upload_job(ctx: &JobCtx, locals: &[String], folder: &str, existing: Existing,
             _ => walk_upload(path, folder, &mut items, &mut folders, &mut refused)?,
         }
     }
+    let mut seen = std::collections::HashMap::new();
     for item in &items {
         check_name(basename(&item.remote)).map_err(CmdError::from)?;
+        // the handheld's names ignore case
+        if let Some(first) = seen.insert(item.remote.to_lowercase(), &item.local) {
+            return Err(CmdError::new(
+                "exists",
+                format!(
+                    "{} and {} would both become {} on the handheld; rename one first",
+                    first.display(),
+                    item.local.display(),
+                    basename(&item.remote)
+                ),
+            ));
+        }
     }
     let total: u64 = items.iter().map(|i| i.size).sum::<u64>().max(1);
-    let app = ctx.app();
     for f in &folders {
-        device::run(app, |c| if c.exists(f)? { Ok(()) } else { c.mkdir(f, false) })?;
+        ctx.run(|c| if c.exists(f)? { Ok(()) } else { c.mkdir(f, false) })?;
     }
     let (mut sent, mut converted, mut skipped, mut done_bytes) = (0usize, 0usize, 0usize, 0u64);
     for item in &items {
-        device::run(app, |c| c.check_cancel())?;
-        let exists = device::run(app, |c| c.exists(&item.remote))?;
+        ctx.run(|c| c.check_cancel())?;
+        let exists = ctx.run(|c| c.exists(&item.remote))?;
         if exists && existing == Existing::Skip {
             skipped += 1;
             done_bytes += item.size;
@@ -306,7 +317,7 @@ fn upload_job(ctx: &JobCtx, locals: &[String], folder: &str, existing: Existing,
         };
         // a converted file's size differs from its source; scale its progress to the source size
         let (base, scale) = (done_bytes, item.size as f64 / data.len().max(1) as f64);
-        device::run(app, |c| {
+        ctx.run(|c| {
             let mut progress = |d: u64, _| ctx.progress(base + (d as f64 * scale) as u64, total, &item.remote);
             c.write_file(&item.remote, &data, Some(&mut progress), true)
         })?;
@@ -341,16 +352,14 @@ pub fn download(app: AppHandle, paths: Vec<String>, folder: String) -> CmdResult
         many => format!("Receiving {} items", many.len()),
     };
     jobs::submit(&app, title, move |ctx| {
-        let app = ctx.app();
         // list everything first so progress can count bytes
         let mut files = Vec::new();
         for p in &paths {
-            let st = device::run(app, |c| c.stat(p))?
-                .ok_or_else(|| CmdError::new("notFound", format!("{p} doesn't exist")))?;
+            let st = ctx.run(|c| c.stat(p))?.ok_or_else(|| CmdError::new("notFound", format!("{p} doesn't exist")))?;
             let base = calcbridge_link::services::dirname(p);
             if st.is_dir {
                 files.push((st.clone(), base.clone()));
-                for e in device::run(app, |c| c.walk(p))? {
+                for e in ctx.run(|c| c.walk(p))? {
                     files.push((e, base.clone()));
                 }
             } else {
@@ -361,7 +370,7 @@ pub fn download(app: AppHandle, paths: Vec<String>, folder: String) -> CmdResult
         let mut done_bytes = 0;
         let mut count = 0;
         for (e, base) in &files {
-            device::run(app, |c| c.check_cancel())?;
+            ctx.run(|c| c.check_cancel())?;
             let rel = e.path.strip_prefix(base.trim_end_matches('/')).unwrap_or(&e.path);
             let local = calcbridge_link::calculator::local_path(Path::new(&folder), rel);
             if e.is_dir {
@@ -369,8 +378,7 @@ pub fn download(app: AppHandle, paths: Vec<String>, folder: String) -> CmdResult
                 continue;
             }
             let start = done_bytes;
-            let data =
-                device::run(app, |c| c.read_file(&e.path, Some(&mut |d, _| ctx.progress(start + d, total, &e.path))))?;
+            let data = ctx.run(|c| c.read_file(&e.path, Some(&mut |d, _| ctx.progress(start + d, total, &e.path))))?;
             if let Some(parent) = local.parent() {
                 std::fs::create_dir_all(parent)?;
             }
@@ -386,7 +394,7 @@ pub fn download(app: AppHandle, paths: Vec<String>, folder: String) -> CmdResult
 pub fn backup(app: AppHandle, folder: String) -> CmdResult<u64> {
     jobs::submit(&app, "Backing up the handheld", move |ctx| {
         let mut failed = Vec::new();
-        let n = device::run(ctx.app(), |c| {
+        let n = ctx.run(|c| {
             let mut progress = |p: &str, i, t| ctx.progress(i as u64, t as u64, p);
             c.backup(Path::new(&folder), Some(&mut progress), Some(&mut failed))
         })?;
@@ -403,7 +411,7 @@ pub fn backup(app: AppHandle, folder: String) -> CmdResult<u64> {
 pub fn restore(app: AppHandle, folder: String, target: String, replace: bool) -> CmdResult<u64> {
     jobs::submit(&app, "Restoring a backup", move |ctx| {
         let mut skipped = Vec::new();
-        let n = device::run(ctx.app(), |c| {
+        let n = ctx.run(|c| {
             c.restore(
                 Path::new(&folder),
                 &target,
@@ -444,7 +452,7 @@ pub struct OsImageCheck {
 pub fn install_os(app: AppHandle, path: String) -> CmdResult<u64> {
     jobs::submit(&app, "Installing an OS", move |ctx| {
         let image = std::fs::read(&path)?;
-        device::run(ctx.app(), |c| {
+        ctx.run(|c| {
             c.install_os(
                 &image,
                 Some(&mut |stage, d, t| {
@@ -620,7 +628,11 @@ pub struct Places {
 }
 
 #[tauri::command]
-pub fn local_places(app: AppHandle) -> Places {
+pub async fn local_places(app: AppHandle) -> CmdResult<Places> {
+    blocking(move || Ok(places(&app))).await
+}
+
+fn places(app: &AppHandle) -> Places {
     let paths = app.path();
     let s = |p: tauri::Result<PathBuf>| p.ok().filter(|p| p.is_dir()).map(|p| p.to_string_lossy().into_owned());
     let home = s(paths.home_dir()).unwrap_or_else(|| "/".into());
@@ -649,10 +661,14 @@ pub async fn local_rename(path: String, new_name: String) -> CmdResult<String> {
     blocking(move || {
         let from = PathBuf::from(&path);
         let name = new_name.trim();
-        if name.is_empty() || name.contains(['/', '\\']) {
+        // ":" too: on Windows "C:x" would move the file onto another drive's current folder
+        if name.is_empty() || name == "." || name == ".." || name.contains(['/', '\\', ':']) {
             return Err(CmdError::new("invalid", "That isn't a valid name"));
         }
         let to = from.with_file_name(name);
+        if to.parent() != from.parent() {
+            return Err(CmdError::new("invalid", "That isn't a valid name"));
+        }
         if to.exists() {
             return Err(CmdError::new("exists", format!("{} already exists", to.display())));
         }

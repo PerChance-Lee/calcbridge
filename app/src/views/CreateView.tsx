@@ -105,11 +105,20 @@ export function CreateView() {
     localStorage.setItem(DRAFT, JSON.stringify(draft));
   }, [draft]);
 
-  // "Open in Create" from the Files tab
+  /** Put new text in the editor; if what's there for that kind was edited, ask first. */
+  async function load(kind: DocKind, name: string, text: string) {
+    const current = draft.content[kind];
+    const edited = current.trim() !== "" && current !== STARTERS[kind] && current !== text;
+    if (edited && !(await app.confirm("Replace what's in the editor?", <p>The {KINDS.find((k) => k.kind === kind)?.label} text you were writing will be replaced by {name}.</p>, "Replace"))) {
+      return;
+    }
+    setDraft((d) => ({ ...d, kind, name, content: { ...d.content, [kind]: text } }));
+  }
+
+  // "Open in Create" from the Files tab or the Viewer
   useEffect(() => {
-    if (!createRequest) return;
-    setDraft((d) => ({ ...d, kind: createRequest.kind, name: createRequest.name, content: { ...d.content, [createRequest.kind]: createRequest.content } }));
-  }, [createRequest]);
+    if (createRequest) load(createRequest.kind, createRequest.name, createRequest.content);
+  }, [createRequest]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // live preview of Notes (debounced)
   useEffect(() => {
@@ -171,7 +180,7 @@ export function CreateView() {
       const text = await api.readTextFile(path);
       const lower = path.toLowerCase();
       const kind: DocKind = lower.endsWith(".py") ? "python" : lower.endsWith(".lua") ? "lua" : lower.endsWith(".txt") ? "text" : "notes";
-      setDraft((d) => ({ ...d, kind, name: baseName(path).replace(/\.[^.]+$/, ""), content: { ...d.content, [kind]: text } }));
+      await load(kind, baseName(path).replace(/\.[^.]+$/, ""), text);
     } catch (e) {
       app.toast("bad", "Couldn't open it", errorText(e));
     }

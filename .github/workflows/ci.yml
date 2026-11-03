@@ -77,10 +77,12 @@ jobs:
         run: |
           npm ci
           npx tauri build --target ${{ matrix.target }}
-      - name: Build the command line
-        run: cargo build --release --locked -p calcbridge-cli --target ${{ matrix.target }}
-      - name: Self-test the packaged binaries
+      # Self-test the app before building the command line: on Windows and macOS file names ignore
+      # case, so the app's binary (CalcBridge) and the command line's (calcbridge) are one file and
+      # the command line build replaces the app's. The installers hold their own copy.
+      - name: Self-test the app
         shell: bash
+        timeout-minutes: 5
         env:
           CALCBRIDGE_SELFTEST_OUT: selftest.txt
         run: |
@@ -93,7 +95,13 @@ jobs:
           [ -n "$app" ] || { echo "no app binary in $dir"; exit 1; }
           "$app" --self-test || { cat selftest.txt; exit 1; }
           cat selftest.txt
-          cli="$dir/calcbridge"; [ -f "$cli.exe" ] && cli="$cli.exe"
+      - name: Build the command line
+        run: cargo build --release --locked -p calcbridge-cli --target ${{ matrix.target }}
+      - name: Self-test the command line
+        shell: bash
+        timeout-minutes: 5
+        run: |
+          cli=target/${{ matrix.target }}/release/calcbridge; [ -f "$cli.exe" ] && cli="$cli.exe"
           "$cli" --sim ls -r /
       - name: Collect the downloads
         shell: bash

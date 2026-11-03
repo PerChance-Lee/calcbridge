@@ -33,6 +33,20 @@ pub fn data_checksum(data: &[u8]) -> u16 {
     c as u16
 }
 
+/// Where this process starts numbering its service sessions (0x8000..0xBFFF).
+///
+/// Observed: a reply the handheld was still preparing when a program gave up (it builds
+/// /NspireLogs.zip slowly) arrives later, addressed to that program's session. libnspire always starts
+/// at 0x8000, so the next program to connect took those packets as answers to its own requests and
+/// read garbage. Starting somewhere different each time makes them strays, which are refused.
+fn first_host_sid() -> u16 {
+    let nanos = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |d| d.subsec_nanos() ^ (d.as_secs() as u32));
+    let mixed = nanos.wrapping_mul(0x9E37_79B9) ^ std::process::id().rotate_left(16);
+    0x8000 + (mixed % 0x4000) as u16
+}
+
 fn sum8(bytes: &[u8]) -> u8 {
     bytes.iter().fold(0u8, |a, &b| a.wrapping_add(b))
 }
@@ -132,7 +146,7 @@ impl Session {
         self.device_sid = SID_ADDR_ASSIGN;
         let first = Packet::new(self.host_sid, self.device_sid, [0x64, 0x01, 0xFF, 0x00]).encode()?;
         self.link.open(&first, progress)?;
-        self.host_sid = 0x8000;
+        self.host_sid = first_host_sid();
         self.service = None;
         Ok(())
     }
@@ -172,6 +186,16 @@ impl Session {
     // ---------------------------------------------------------- services
     /// Connect to a service, run `f`, and disconnect again.
     pub fn with_service<T>(&mut self, sid: u16, f: impl FnOnce(&mut Session) -> Result<T>) -> Result<T> {
+        self.run_service(sid, f, true)
+    }
+
+    /// Like [`Session::with_service`], but once `f` has succeeded a failed disconnect doesn't undo it:
+    /// the handheld restarts straight after finishing an OS install, before it can ack the disconnect.
+    pub fn with_service_then_restart<T>(&mut self, sid: u16, f: impl FnOnce(&mut Session) -> Result<T>) -> Result<T> {
+        self.run_service(sid, f, false)
+    }
+
+    fn run_service<T>(&mut self, sid: u16, f: impl FnOnce(&mut Session) -> Result<T>, strict: bool) -> Result<T> {
         if self.service.is_some() {
             return Err(Error::Protocol("a service is already connected".into()));
         }
@@ -179,7 +203,11 @@ impl Session {
         self.device_sid = sid;
         match f(self) {
             Ok(v) => {
-                self.disconnect()?;
+                match self.disconnect() {
+                    Err(e) if strict => return Err(e),
+                    Err(e) => log::info!("no disconnect after the finished request (the handheld restarted?): {e}"),
+                    Ok(()) => {}
+                }
                 Ok(v)
             }
             Err(Error::LinkReset) => {

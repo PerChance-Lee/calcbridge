@@ -115,3 +115,15 @@ fn damaged_inner_layers_never_panic() {
         }
     }
 }
+
+/// Lua scripts are CDATA: non-ASCII text and a script ending in "]" must come back as written.
+/// (The handheld reads CDATA as plain UTF-8, verified on a CX II.)
+#[test]
+fn lua_scripts_round_trip() {
+    for script in ["gc:drawString(\"pi=π e=é ≤\", 10, 30)", "x = t[1]", "y = a[b[1]]", "s = \"]]\" .. \"]\"", "-- ]] ]"]
+    {
+        let doc = TnsDocument::from_bytes(&build_lua(script).unwrap()).unwrap();
+        let back = doc.lua_script().unwrap_or_else(|| panic!("no script back for {script:?}"));
+        assert!(back.contains(script), "{script:?} came back as {back:?}");
+    }
+}

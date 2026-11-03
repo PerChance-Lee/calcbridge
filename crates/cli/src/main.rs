@@ -306,8 +306,12 @@ fn run_on(c: &Calculator, cmd: Cmd) -> Res {
             println!("saved {}x{} screenshot to {}", s.width, s.height, file.display());
         }
         Cmd::Backup { folder } => {
-            let n = c.backup(&folder, Some(&mut |p: &str, i, t| println!("[{i}/{t}] {p}")))?;
+            let mut failed = Vec::new();
+            let n = c.backup(&folder, Some(&mut |p: &str, i, t| println!("[{i}/{t}] {p}")), Some(&mut failed))?;
             println!("backed up {n} files to {}", folder.display());
+            for (path, why) in &failed {
+                println!("couldn't read {path}: {why}");
+            }
         }
         Cmd::Restore { folder, remote: r, force } => {
             let mut skipped = Vec::new();

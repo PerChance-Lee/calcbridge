@@ -117,6 +117,7 @@ struct State {
     stats: HashMap<String, u64>,
     keys_pressed: Vec<u32>,
     replug_after_ack: bool,
+    refused_reads: std::collections::HashSet<String>,
 }
 
 /// A simulated CX II. Clones share the same calculator.
@@ -153,6 +154,7 @@ impl Sim {
             stats: HashMap::new(),
             keys_pressed: Vec::new(),
             replug_after_ack: false,
+            refused_reads: Default::default(),
             cfg,
         };
         let mut doc = b"*TIMLP0500".to_vec();
@@ -200,6 +202,11 @@ impl Sim {
     }
 
     /// Restart the link right after acking the next request, while the host waits for the reply.
+    /// Refuse to hand over this file when it's read (as if it were damaged).
+    pub fn refuse_reads(&self, path: &str) {
+        self.state().refused_reads.insert(path.to_owned());
+    }
+
     pub fn replug_after_next_ack(&self) {
         self.state().replug_after_ack = true;
     }
@@ -417,13 +424,16 @@ impl State {
         if dst == navnet::SID_ADDR_ASSIGN || [navnet::SID_ACK, navnet::SID_ACK_ZERO, navnet::SID_NACK].contains(&src) {
             return; // the host acking/refusing one of our packets isn't a request
         }
-        self.count(&format!("request_{dst:04x}"));
-        if dst == navnet::SID_DISCONNECT {
+        // The host ends a service session with a packet *from* 0x40DE (to the service) naming its
+        // session id, as libnspire does.
+        if src == navnet::SID_DISCONNECT || dst == navnet::SID_DISCONNECT {
             if let &[a, b, ..] = p.data.as_slice() {
                 self.sessions.remove(&u16::from_be_bytes([a, b]));
             }
+            self.count("disconnects");
             return;
         }
+        self.count(&format!("request_{dst:04x}"));
         let mode = self.sessions.remove(&src).unwrap_or(Mode::Idle);
         let mode = match dst {
             0x4020 => {
@@ -594,6 +604,10 @@ impl State {
             }
             0x0701 => {
                 let Ok((path, _)) = scan_padded(d, 2) else { return mode };
+                if self.refused_reads.contains(&path) {
+                    self.reply(p, vec![0xFF, 0x04]);
+                    return mode;
+                }
                 match self.node(&path) {
                     Some(Node::File(data)) => {
                         let data = data.clone();

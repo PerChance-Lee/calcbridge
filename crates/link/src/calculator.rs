@@ -420,22 +420,44 @@ impl Calculator {
     }
 
     /// Copy everything on the handheld into `local_dir`. Returns the number of files.
-    pub fn backup(&self, local_dir: &Path, mut progress: ItemProgress<'_, '_>) -> Result<usize> {
+    ///
+    /// With `failed`, a file the handheld won't hand over (it refuses, or doesn't answer in time) is
+    /// listed there and the backup goes on; three in a row still stop it. Without, the first stops it.
+    pub fn backup(
+        &self,
+        local_dir: &Path,
+        mut progress: ItemProgress<'_, '_>,
+        mut failed: Option<&mut Vec<(String, Error)>>,
+    ) -> Result<usize> {
         let entries = self.walk("/")?;
         let files: Vec<&DirEntry> = entries.iter().filter(|e| !e.is_dir).collect();
         for e in entries.iter().filter(|e| e.is_dir) {
             fs::create_dir_all(local_path(local_dir, &e.path))?;
         }
         fs::create_dir_all(local_dir)?;
+        let (mut copied, mut in_a_row) = (0, 0);
         for (n, e) in files.iter().enumerate() {
             self.check_cancel()?;
             if let Some(p) = progress.as_deref_mut() {
                 p(&e.path, n + 1, files.len());
             }
-            let data = self.read_file(&e.path, None)?;
-            fs::write(local_path(local_dir, &e.path), data)?;
+            match self.read_file(&e.path, None) {
+                Ok(data) => {
+                    fs::write(local_path(local_dir, &e.path), data)?;
+                    copied += 1;
+                    in_a_row = 0;
+                }
+                Err(err @ (Error::Remote { .. } | Error::Timeout(_))) if failed.is_some() && in_a_row < 2 => {
+                    in_a_row += 1;
+                    log::warn!("backup: couldn't read {}: {err}", e.path);
+                    if let Some(list) = failed.as_deref_mut() {
+                        list.push((e.path.clone(), err));
+                    }
+                }
+                Err(err) => return Err(err),
+            }
         }
-        Ok(files.len())
+        Ok(copied)
     }
 
     /// Upload a backup folder's .tns documents into `remote_folder`. Returns how many were written.
@@ -501,6 +523,18 @@ impl Calculator {
         if image.len() < 1024 {
             return Err(Error::Invalid("That file is too small to be an OS image".into()));
         }
-        self.with_session(|s| services::install_os(s, image, progress.as_deref_mut()))
+        // Never retried: a reset partway may mean the handheld already took the image and restarted,
+        // and sending a whole OS a second time is not a harmless retry.
+        let mut s = self.session();
+        match services::install_os(&mut s, image, progress.as_deref_mut()) {
+            Err(Error::LinkReset) => {
+                // reopen so the connection is usable again, but report what happened
+                let _ = s.open(None);
+                Err(Error::Link(
+                    "The calculator restarted during the OS install. Check its screen before trying again.".into(),
+                ))
+            }
+            r => r,
+        }
     }
 }

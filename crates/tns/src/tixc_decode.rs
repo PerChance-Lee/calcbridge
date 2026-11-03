@@ -7,7 +7,6 @@
 const ETA: &[u8; 32] = b" etaionsrhAlcduFmfpgybwvkxqjz,.'";
 const DIGIT: &[u8; 32] = b"0123456789AN,.EFx; (){}[]^+-/*PB";
 const CDATA_OPEN: &[u8] = b"<![CDATA[";
-const CDATA_CLOSE: &[u8] = b"]]>";
 
 fn special_digit(b: u8, out: &mut Vec<u8>) {
     match b {
@@ -233,7 +232,7 @@ pub fn decode_tixc(data: &[u8]) -> Result<Vec<u8>, String> {
     }
     let version = &data[dash + 1..qmark];
     let mut pos = qmark + 2;
-    let mut out: Vec<u8> = Vec::with_capacity(data.len() * 4);
+    let mut out: Vec<u8> = Vec::with_capacity((data.len() * 4).min(16 << 20));
     out.extend_from_slice(b"<?xml version=\"");
     out.extend_from_slice(version);
     out.extend_from_slice(b"\" encoding=\"UTF-8\" ?>");
@@ -502,15 +501,17 @@ pub fn decode_tixc(data: &[u8]) -> Result<Vec<u8>, String> {
             20 => {
                 out.push(b);
                 pos += 1;
-                if cdata_match < CDATA_CLOSE.len() && b == CDATA_CLOSE[cdata_match] {
-                    cdata_match += 1;
-                } else {
-                    state = 19;
-                    cdata_match = 0;
-                }
-                if cdata_match == CDATA_CLOSE.len() {
-                    state = 3;
-                    cdata_match = 0;
+                match (cdata_match, b) {
+                    (1, b']') => cdata_match = 2,
+                    (2, b']') => {} // "]]]": the last two are still the start of "]]>"
+                    (2, b'>') => {
+                        state = 3;
+                        cdata_match = 0;
+                    }
+                    _ => {
+                        state = 19;
+                        cdata_match = 0;
+                    }
                 }
             }
             s => return Err(format!("unsupported TIXC parser state {s}")),

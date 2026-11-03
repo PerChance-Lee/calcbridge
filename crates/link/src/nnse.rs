@@ -376,7 +376,11 @@ impl Link {
     ) -> Result<()> {
         self.inbox.clear();
         self.reset_seen = false;
-        self.ready = false;
+        if self.ready {
+            // Reopening after a reset whose new handshake already finished (usually inside the very
+            // wait that noticed the reset): sequence numbers continue from it, nothing to look for.
+            return self.send(first_payload);
+        }
         // A freshly plugged-in calc repeats address requests; an established link stays silent.
         // (After a mid-session reset the address request was already answered; the time request
         // that completes the handshake follows shortly.)
@@ -501,7 +505,7 @@ impl Link {
             }
             let left = deadline.saturating_duration_since(Instant::now());
             if left < MIN_WAIT {
-                return Err(Error::Link("Timed out waiting for the calculator".into()));
+                return Err(Error::Timeout("Timed out waiting for the calculator".into()));
             }
             if let Some(m) = self.read_msg(left.min(Duration::from_secs(1)))? {
                 self.handle(&m)?;

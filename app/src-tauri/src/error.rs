@@ -26,6 +26,7 @@ impl From<Error> for CmdError {
             Error::NoDevice(_) => "noDevice",
             Error::Busy(_) => "busy",
             Error::Link(_) | Error::LinkReset => "link",
+            Error::Timeout(_) => "timeout",
             Error::Protocol(_) => "protocol",
             Error::Remote { kind: RemoteKind::NotFound, .. } => "notFound",
             Error::Remote { kind: RemoteKind::Exists, .. } => "exists",

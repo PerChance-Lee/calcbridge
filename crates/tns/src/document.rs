@@ -189,7 +189,7 @@ impl TnsDocument {
         let mut out = Vec::new();
         for (pi, name) in self.problems().iter().enumerate() {
             let text = self.entry(name).map(|e| e.text()).unwrap_or_default();
-            if let Ok(doc) = roxmltree::Document::parse(&text) {
+            if let Ok(doc) = crate::xml::parse(&text) {
                 out.extend(f(pi + 1, &doc));
             }
         }

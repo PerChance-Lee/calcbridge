@@ -385,10 +385,17 @@ pub fn download(app: AppHandle, paths: Vec<String>, folder: String) -> CmdResult
 #[tauri::command]
 pub fn backup(app: AppHandle, folder: String) -> CmdResult<u64> {
     jobs::submit(&app, "Backing up the handheld", move |ctx| {
+        let mut failed = Vec::new();
         let n = device::run(ctx.app(), |c| {
-            c.backup(Path::new(&folder), Some(&mut |p: &str, i, t| ctx.progress(i as u64, t as u64, p)))
+            let mut progress = |p: &str, i, t| ctx.progress(i as u64, t as u64, p);
+            c.backup(Path::new(&folder), Some(&mut progress), Some(&mut failed))
         })?;
-        Ok(format!("Backed up {} to {folder}", plural(n, "file")))
+        let mut msg = format!("Backed up {} to {folder}", plural(n, "file"));
+        if !failed.is_empty() {
+            let names: Vec<&str> = failed.iter().map(|(p, _)| basename(p)).collect();
+            msg += &format!("; the handheld didn't hand over {}", names.join(", "));
+        }
+        Ok(msg)
     })
 }
 

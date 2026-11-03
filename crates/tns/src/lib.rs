@@ -13,6 +13,7 @@ pub mod r2d;
 pub mod textio;
 pub mod tixc;
 pub mod tixc_decode;
+pub mod xml;
 
 pub use container::{Entry, Method};
 pub use document::{Page, TnsDocument, build_lua, build_notes, build_python, build_text};

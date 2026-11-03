@@ -172,7 +172,7 @@ fn run(calc: &Calculator, root: &str) {
 
     step("backup everything (read-only on the handheld)", || {
         let bk = tmp.path().join("backup");
-        let n = calc.backup(&bk, None).unwrap();
+        let n = calc.backup(&bk, None, None).unwrap();
         println!("    backed up {n} files");
         assert!(n >= 1);
         let files: Vec<_> =

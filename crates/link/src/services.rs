@@ -19,6 +19,8 @@ pub const SID_OS: u16 = 0x4080;
 pub const OK: u16 = 0xFF00;
 /// File data per packet: one byte of each data packet is the opcode.
 pub const CHUNK: usize = MAX_DATA - 1;
+/// How long the handheld may take to start sending a file it has to build first.
+const FIRST_READ_REPLY: Duration = Duration::from_secs(60);
 
 // ------------------------------------------------------------------ helpers
 /// Path strings are NUL-terminated and padded with zeros to at least 9 bytes.
@@ -37,6 +39,32 @@ pub fn scan_padded(buf: &[u8], off: usize) -> Result<(String, usize)> {
 
 fn short() -> Error {
     Error::Protocol("short reply from the calculator".into())
+}
+
+/// Counts data packets that carry no data, so a calculator that keeps sending them can't hang a
+/// transfer forever.
+#[derive(Default)]
+struct EmptyPackets(u32);
+
+impl EmptyPackets {
+    const LIMIT: u32 = 64;
+
+    /// The data in a data packet (after its opcode byte).
+    fn data<'a>(&mut self, b: &'a [u8]) -> Result<&'a [u8]> {
+        let data = b.get(1..).unwrap_or_default();
+        if data.is_empty() {
+            self.0 += 1;
+            if std::env::var_os("CALCBRIDGE_DEBUG_EMPTY").is_some() {
+                eprintln!("empty data packet ({} in a row): {b:02x?}", self.0);
+            }
+            if self.0 > Self::LIMIT {
+                return Err(Error::Protocol("the calculator keeps sending empty data packets".into()));
+            }
+        } else {
+            self.0 = 0;
+        }
+        Ok(data)
+    }
 }
 
 fn bytes<const N: usize>(b: &[u8], off: usize) -> Result<[u8; N]> {
@@ -243,9 +271,10 @@ pub fn screenshot(s: &mut Session) -> Result<Screenshot> {
         if !matches!(bpp, 4 | 16) || w > 4096 || h > 4096 || size > 64 << 20 {
             return Err(Error::Protocol(format!("unexpected screen format {w}x{h}x{bpp}")));
         }
-        let mut raw = Vec::with_capacity(size);
+        let mut raw = Vec::with_capacity(size.min(1 << 20));
+        let mut empty = EmptyPackets::default();
         while raw.len() < size {
-            raw.extend_from_slice(s.read()?.get(1..).unwrap_or_default());
+            raw.extend_from_slice(empty.data(&s.read()?)?);
         }
         raw.truncate(size);
         let out_size = usize::from(w) * usize::from(h) * usize::from(bpp) / 8;
@@ -403,15 +432,17 @@ pub fn read_file(
         let mut req = vec![0x07, 0x01];
         req.extend(padded(path));
         s.write(&req)?;
-        let b = s.read()?;
+        // Observed: the handheld builds /NspireLogs.zip when it's read, taking 10 s or more to answer.
+        let b = s.read_timeout(FIRST_READ_REPLY)?;
         if result_code(&b) != Some(0x0301) {
             return Err(Error::remote(RemoteKind::NotFound, format!("{path} doesn't exist"), result_code(&b)));
         }
         let length = u32_at(&b, 11)? as usize;
         s.write(&[0x04])?;
-        let mut out = Vec::with_capacity(length);
+        let mut out = Vec::with_capacity(length.min(16 << 20)); // the reply's size is only a claim
+        let mut empty = EmptyPackets::default();
         while out.len() < length {
-            out.extend_from_slice(s.read()?.get(1..).unwrap_or_default());
+            out.extend_from_slice(empty.data(&s.read()?)?);
             if let Some(p) = progress.as_deref_mut() {
                 p(out.len().min(length) as u64, length as u64);
             }
@@ -529,7 +560,7 @@ pub fn install_os(
     let refused = |what: &str, code: Option<u16>| {
         Error::remote(RemoteKind::Refused, format!("The calculator {what} the OS image: {}", why(code)), code)
     };
-    s.with_service(SID_OS, |s| {
+    s.with_service_then_restart(SID_OS, |s| {
         let mut req = vec![0x03];
         req.extend_from_slice(&(image.len() as u32).to_be_bytes());
         s.write(&req)?;

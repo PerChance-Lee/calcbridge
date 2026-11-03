@@ -326,7 +326,7 @@ fn backup_and_restore() {
     calc.mkdir("/B/c", true).unwrap();
     calc.write_file("/B/c/doc.tns", b"doc", None, false).unwrap();
     let bk = dir.path().join("bk");
-    let files = calc.backup(&bk, None).unwrap();
+    let files = calc.backup(&bk, None, None).unwrap();
     assert!(files >= 3);
     assert_eq!(std::fs::read(bk.join("B").join("c").join("doc.tns")).unwrap(), b"doc");
     calc.delete("/B").unwrap();
@@ -342,7 +342,7 @@ fn cancel_between_items() {
         calc.write_file(&format!("/c{i}.tns"), b"x", None, false).unwrap();
     }
     calc.cancel();
-    assert!(matches!(calc.backup(&dir.path().join("bk"), None), Err(Error::Cancelled)));
+    assert!(matches!(calc.backup(&dir.path().join("bk"), None, None), Err(Error::Cancelled)));
 }
 
 #[test]
@@ -498,7 +498,7 @@ fn simulator_refuses_non_tns_like_the_handheld() {
 fn restore_counts_only_written() {
     let (_sim, dir, calc) = setup();
     let bk = dir.path().join("bk");
-    assert!(calc.backup(&bk, None).unwrap() >= 2);
+    assert!(calc.backup(&bk, None, None).unwrap() >= 2);
     let mut skipped = Vec::new();
     assert_eq!(calc.restore(&bk, "/", false, None, Some(&mut skipped)).unwrap(), 0); // all already there
     assert!(skipped.iter().any(|p| p.ends_with("themes.csv")));
@@ -550,4 +550,29 @@ fn the_top_folder_cannot_be_deleted() {
         assert!(matches!(calc.delete(root), Err(Error::Invalid(_))), "{root:?}");
     }
     assert!(calc.exists("/Examples").unwrap());
+}
+
+// one file the handheld won't hand over shouldn't sink a whole backup
+#[test]
+fn backup_goes_on_past_an_unreadable_file() {
+    let (sim, dir, calc) = setup();
+    sim.put("/a.tns", b"a".to_vec());
+    sim.put("/b.tns", b"b".to_vec());
+    sim.refuse_reads("/a.tns");
+    let mut failed = Vec::new();
+    let n = calc.backup(&dir.path().join("bk"), None, Some(&mut failed)).unwrap();
+    assert_eq!(failed.iter().map(|(p, _)| p.as_str()).collect::<Vec<_>>(), ["/a.tns"]);
+    assert!(n >= 2 && dir.path().join("bk").join("b.tns").exists());
+    // without a list to fill, the first failure still stops it
+    assert!(calc.backup(&dir.path().join("bk2"), None, None).is_err());
+}
+
+// the simulator used to take every disconnect for a new request and resend a whole screenshot
+#[test]
+fn a_screenshot_is_one_request() {
+    let (sim, _dir, calc) = setup();
+    calc.screenshot().unwrap();
+    calc.screenshot().unwrap();
+    assert_eq!(sim.stat("request_4024"), 2);
+    assert_eq!(sim.stat("disconnects"), 2);
 }

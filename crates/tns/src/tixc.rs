@@ -1,10 +1,10 @@
 //! TIXC encoding: XML text → TI's tokenised XML stream.
 //!
 //! Only literal tags are written (always valid TIXC): every opening tag adds a dictionary entry;
-//! closing tags become `0x0E` + entry index, or are written out in full past 256 entries. Characters
-//! from U+0080 use TI's escapes; control characters are never written raw, because in TIXC 0x00–0x08
-//! and 0x0B start multi-byte sequences and 0x0C, 0x0E–0x1F are tokens. Tab/newline/CR survive as
-//! character references outside CDATA and raw inside it (Lua scripts).
+//! closing tags become `0x0E` + entry index, or are written out in full past 256 entries. Outside
+//! CDATA, characters from U+0080 use TI's escapes and control characters are never written raw,
+//! because in TIXC 0x00–0x08 and 0x0B start multi-byte sequences and 0x0C, 0x0E–0x1F are tokens;
+//! tab/newline/CR become character references. CDATA (Lua scripts) is plain UTF-8.
 
 use crate::{Result, TnsError};
 
@@ -25,6 +25,10 @@ fn escape(text: &str, cdata: bool, out: &mut Vec<u8>) {
         }
         if u < 0x80 {
             out.push(u as u8);
+        } else if cdata {
+            // Observed: the handheld reads CDATA (Lua scripts) as plain UTF-8; TI's character escapes
+            // there make it report "an error was found in the format of this document".
+            out.extend_from_slice(c.encode_utf8(&mut [0; 4]).as_bytes());
         } else if u < 0x800 {
             out.extend_from_slice(&[(u >> 8) as u8, (u & 0xFF) as u8]);
         } else if u < 0x10000 {

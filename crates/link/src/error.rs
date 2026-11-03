@@ -22,6 +22,10 @@ pub enum Error {
     /// The calculator stopped answering on the link layer.
     #[error("{0}")]
     Link(String),
+    /// The calculator acknowledged a request but didn't answer it in time. The link itself still
+    /// works (it acked), so this isn't a reason to reconnect.
+    #[error("{0}")]
+    Timeout(String),
     /// The calculator restarted the link (it was re-plugged or woke up); the session must re-open.
     #[error("The calculator restarted the connection")]
     LinkReset,

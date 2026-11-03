@@ -140,7 +140,8 @@ fn tc_color(v: &str) -> Option<String> {
 fn runs<'a>(leaf: roxmltree::Node<'a, 'a>, formats: &std::collections::HashMap<String, Fmt>) -> Vec<(String, Fmt)> {
     let text: String = leaf.descendants().filter(|n| n.is_text()).filter_map(|n| n.text()).collect();
     let chars: Vec<char> = text.chars().collect();
-    let np: usize = leaf.attribute("np").and_then(|v| v.parse().ok()).unwrap_or(1);
+    // np comes from the file: never loop more often than there are attributes to look at
+    let np: usize = leaf.attribute("np").and_then(|v| v.parse().ok()).unwrap_or(1).min(leaf.attributes().len());
     let mut out = Vec::new();
     let mut start = 0usize;
     for k in 0..np {
@@ -257,7 +258,7 @@ fn collect_para(node: roxmltree::Node, formats: &std::collections::HashMap<Strin
 
 /// A Notes page's r2dtotree XML → paragraphs.
 pub fn parse_r2d(tree_xml: &str) -> Result<Vec<ViewParagraph>, String> {
-    let doc = roxmltree::Document::parse(tree_xml).map_err(|e| e.to_string())?;
+    let doc = crate::xml::parse(tree_xml)?;
     let mut formats = std::collections::HashMap::new();
     for fe in doc.descendants().filter(|n| n.has_tag_name("formatEntry")) {
         let fst = fe.attribute("fst").unwrap_or("0");

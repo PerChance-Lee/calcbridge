@@ -11,3 +11,7 @@ dist/
 screenshots/
 *.dmg
 *.zip
+target/
+node_modules/
+app/dist/
+app/src-tauri/gen/

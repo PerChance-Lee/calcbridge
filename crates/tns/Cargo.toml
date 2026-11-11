@@ -1,0 +1,19 @@
+[package]
+name = "calcbridge-tns"
+description = "Read and write TI-Nspire .tns documents (Notes with 2D math, Python, Lua)"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+des = "0.8"
+flate2 = "1"
+roxmltree = "0.20"
+getrandom = "0.3"
+thiserror = "2"
+serde = { version = "1", features = ["derive"] }
+
+[dev-dependencies]
+serde_json = "1"

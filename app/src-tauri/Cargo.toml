@@ -1,0 +1,31 @@
+[package]
+name = "calcbridge-app"
+description = "CalcBridge desktop app (Tauri)"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[[bin]]
+name = "calcbridge-app"
+path = "src/main.rs"
+
+[build-dependencies]
+tauri-build = { version = "2.5", features = [] }
+
+[dependencies]
+calcbridge-link = { path = "../../crates/link", features = ["usb", "image"] }
+calcbridge-tns = { path = "../../crates/tns" }
+tauri = { version = "2.12", features = [] }
+tauri-plugin-dialog = "2.8"
+tauri-plugin-opener = "2.7"
+tauri-plugin-window-state = "2.5"
+tauri-plugin-single-instance = "2.5"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+log = "0.4"
+
+[features]
+# `tauri build` turns this on to serve the bundled frontend instead of the dev server
+custom-protocol = ["tauri/custom-protocol"]
